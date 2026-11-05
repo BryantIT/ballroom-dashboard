@@ -17,6 +17,14 @@ describe("GET /api/_internal/tenant-probe", () => {
   }, 60_000);
 
   afterAll(async () => {
+    // GET() below imports lib/db/client.ts, whose module-level Pool reads
+    // DATABASE_RUNTIME_URL at import time and is never closed by app code
+    // (it's a long-lived singleton in production). Left open here, it
+    // outlives testDb.stop() below and throws an unhandled "terminating
+    // connection due to administrator command" when the container dies
+    // out from under it.
+    const { db } = await import("@/lib/db/client");
+    await db.$client.end();
     await testDb.stop();
   });
 

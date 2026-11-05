@@ -25,5 +25,17 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    server: {
+      // next-auth@beta imports "next/server" without a file extension.
+      // Vitest externalizes node_modules packages by default, handing
+      // that import straight to Node's native ESM resolver, which (unlike
+      // Vite's own resolver) requires an exact extension and has no
+      // "exports" map to fall back on for this package — it fails with
+      // "Cannot find module .../next/server". Inlining next-auth routes
+      // it through Vite's resolver instead, which tolerates this.
+      deps: {
+        inline: ["next-auth"],
+      },
+    },
   },
 });

@@ -34,10 +34,10 @@ export async function createTestDatabase(): Promise<TestDatabase> {
     .replace("GRANT CONNECT ON DATABASE ballroomdash TO app_runtime;", "");
   await migratorClient.query(rolesSql);
 
-  const runtimeConnectionUri = connectionUri.replace(
-    /postgresql:\/\/[^:]+:[^@]+@/,
-    "postgresql://app_runtime:app_runtime@"
-  );
+  const runtimeUrl = new URL(connectionUri);
+  runtimeUrl.username = "app_runtime";
+  runtimeUrl.password = "app_runtime";
+  const runtimeConnectionUri = runtimeUrl.toString();
 
   await migratorClient.end();
 
