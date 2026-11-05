@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";

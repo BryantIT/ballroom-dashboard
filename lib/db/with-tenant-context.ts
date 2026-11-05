@@ -28,11 +28,9 @@ export async function withTenantContext<T>(
     await tx.execute(
       sql`select set_config('app.user_id', ${context.userId}, true)`
     );
-    if (context.tenantId) {
-      await tx.execute(
-        sql`select set_config('app.tenant_id', ${context.tenantId}, true)`
-      );
-    }
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${context.tenantId ?? ""}, true)`
+    );
     return callback(tx);
   });
 }

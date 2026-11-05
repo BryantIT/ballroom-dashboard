@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Client } from "pg";
 import { createTestDatabase, type TestDatabase } from "./test-database";
@@ -98,5 +99,38 @@ describe("tenant_probe RLS", () => {
     await runtimeClient.end();
 
     expect(result.rows).toHaveLength(0);
+  });
+
+  test("the runtime connection has restricted, non-owner, non-superuser privileges", async () => {
+    const runtimeClient = new Client({
+      connectionString: testDb.runtimeConnectionUri,
+    });
+    await runtimeClient.connect();
+
+    const who = await runtimeClient.query("select current_user");
+    expect(who.rows[0].current_user).toBe("app_runtime");
+
+    const roleAttrs = await runtimeClient.query(
+      "select rolsuper, rolbypassrls from pg_roles where rolname = current_user"
+    );
+    expect(roleAttrs.rows[0].rolsuper).toBe(false);
+    expect(roleAttrs.rows[0].rolbypassrls).toBe(false);
+
+    const owner = await runtimeClient.query(
+      `select relowner::regrole::text as owner from pg_class where oid = '"app"."tenant_probe"'::regclass`
+    );
+    expect(owner.rows[0].owner).not.toBe("app_runtime");
+
+    await expect(
+      runtimeClient.query(
+        `alter table "app"."tenant_probe" disable row level security`
+      )
+    ).rejects.toThrow();
+
+    await expect(
+      runtimeClient.query(`create table "app"."should_not_exist" (id int)`)
+    ).rejects.toThrow();
+
+    await runtimeClient.end();
   });
 });

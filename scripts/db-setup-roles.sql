@@ -1,3 +1,12 @@
+-- DEV/CI ONLY. The app_runtime password here is a hardcoded literal for
+-- local Compose and Testcontainers use. Production roles are provisioned
+-- with a secret from the secrets manager, never this script, as written.
+--
+-- Every new tenant-owned table needs a GRANT line added below for
+-- app_runtime (this script runs after migrations create the schema, so a
+-- migration cannot grant its own table's privileges to app_runtime
+-- without this two-step split).
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_runtime') THEN
