@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ballroomdash_migrator
+      POSTGRES_PASSWORD: ballroomdash_migrator
+      POSTGRES_DB: ballroomdash
+    ports:
+      - "5432:5432"
+    volumes:
+      - ballroomdash_pgdata:/var/lib/postgresql/data
+
+volumes:
+  ballroomdash_pgdata:
