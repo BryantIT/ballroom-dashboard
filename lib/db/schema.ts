@@ -103,11 +103,14 @@ export const locations = appSchema.table("locations", {
 });
 
 // studioId is denormalized from locations.studioId (not derived via a
-// join) so the RLS policy below doesn't need one. The application layer
-// (never a caller-supplied value) is responsible for keeping it in sync —
-// see this task's test and the Review Focus note on room/location
-// consistency. A DB trigger enforcing this is deferred to Phase 9 per
-// the spec's "Security and implementation cautions" section.
+// join) so the RLS policy below doesn't need one. BR-01 requires this
+// stay in sync with the owning location's studio_id. Nothing enforces or
+// tests that yet: no task in this phase creates rooms through the API.
+// Whichever future phase adds room creation must derive studioId
+// server-side from the location, never accept it from the caller, and
+// test that derivation against a mismatched value. A DB trigger enforcing
+// this is separately deferred to Phase 9 hardening, per the spec's
+// "Security and implementation cautions" section.
 export const rooms = appSchema.table("rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
   locationId: uuid("location_id")
