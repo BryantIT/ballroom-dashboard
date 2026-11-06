@@ -121,3 +121,12 @@ export const rooms = appSchema.table("rooms", {
     .references(() => studios.id),
   name: text("name").notNull(),
 });
+
+// --- Phase 1: shared reference catalog — NOT tenant-owned, no RLS.
+// Same category of exception as this file's Auth.js tables (users,
+// accounts, etc.): global data every tenant reads, nothing writes at
+// runtime (seeded once by migration). See this plan's Global Constraints.
+export const permissions = appSchema.table("permissions", {
+  code: text("code").primaryKey(),
+  description: text("description").notNull(),
+});

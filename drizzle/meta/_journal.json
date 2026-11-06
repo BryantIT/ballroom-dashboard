@@ -29,6 +29,20 @@
       "when": 1793976158055,
       "tag": "0003_studios_locations_rooms_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793976678126,
+      "tag": "0004_awesome_meteorite",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793976684462,
+      "tag": "0005_permissions_seed",
+      "breakpoints": true
     }
   ]
 }
