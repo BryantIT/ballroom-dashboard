@@ -78,3 +78,43 @@ export const tenantProbe = appSchema.table("tenant_probe", {
   studioId: uuid("studio_id").notNull(),
   label: text("label").notNull(),
 });
+
+// --- Phase 1: Platform & Studio ---
+// studios.id is NOT auto-generated: lib/studios/provision.ts (Task 5)
+// generates the id in application code first, so it can open the new
+// studio's own withTenantContext() transaction before the row exists —
+// every insert in that transaction (this row included) then satisfies
+// the same RLS WITH CHECK every other tenant write does.
+export const studios = appSchema.table("studios", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const locations = appSchema.table("locations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  name: text("name").notNull(),
+  timezone: text("timezone").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// studioId is denormalized from locations.studioId (not derived via a
+// join) so the RLS policy below doesn't need one. The application layer
+// (never a caller-supplied value) is responsible for keeping it in sync —
+// see this task's test and the Review Focus note on room/location
+// consistency. A DB trigger enforcing this is deferred to Phase 9 per
+// the spec's "Security and implementation cautions" section.
+export const rooms = appSchema.table("rooms", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  name: text("name").notNull(),
+});
