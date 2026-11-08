@@ -29,3 +29,5 @@ GRANT SELECT, INSERT, UPDATE ON "app"."studios" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "app"."locations" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "app"."rooms" TO app_runtime;
 GRANT SELECT ON "app"."permissions" TO app_runtime;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "app"."roles" TO app_runtime;
+GRANT SELECT, INSERT, DELETE ON "app"."role_permissions" TO app_runtime;

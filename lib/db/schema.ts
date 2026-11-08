@@ -6,6 +6,8 @@ import {
   uuid,
   primaryKey,
   integer,
+  boolean,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 // Login identity only. NOT the business "students" table from later
@@ -130,3 +132,35 @@ export const permissions = appSchema.table("permissions", {
   code: text("code").primaryKey(),
   description: text("description").notNull(),
 });
+
+export const roles = appSchema.table(
+  "roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    isBuiltin: boolean("is_builtin").notNull().default(true),
+  },
+  (t) => [uniqueIndex("roles_studio_code_unique").on(t.studioId, t.code)]
+);
+
+export const rolePermissions = appSchema.table(
+  "role_permissions",
+  {
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id),
+    permissionCode: text("permission_code")
+      .notNull()
+      .references(() => permissions.code),
+    // Denormalized from roles.studioId so the RLS policy doesn't need a
+    // join through roles — same rationale as rooms.studioId in Task 1.
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+  },
+  (t) => [primaryKey({ columns: [t.roleId, t.permissionCode] })]
+);
