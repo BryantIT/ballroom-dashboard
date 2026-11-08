@@ -164,3 +164,22 @@ export const rolePermissions = appSchema.table(
   },
   (t) => [primaryKey({ columns: [t.roleId, t.permissionCode] })]
 );
+
+export const memberships = appSchema.table(
+  "memberships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("memberships_studio_user_unique").on(t.studioId, t.userId)]
+);
