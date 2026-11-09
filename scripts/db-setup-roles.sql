@@ -34,8 +34,9 @@ GRANT SELECT, INSERT, DELETE ON "app"."role_permissions" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."memberships" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."invitations" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."support_sessions" TO app_runtime;
--- INSERT is needed because provisioning a platform admin happens through
--- the same app_runtime-role connection as everything else (see
--- lib/platform/support.test.ts); it is not an RLS bypass since
--- platform_admins carries no tenant data and has no RLS policy at all.
-GRANT SELECT, INSERT ON "app"."platform_admins" TO app_runtime;
+-- SELECT only: no route or service in this codebase ever inserts a
+-- platform_admins row through app_runtime — granting staff admin status
+-- is an out-of-band operation performed directly against the database,
+-- not an application code path. isPlatformAdmin()/requireActiveSupportSession()
+-- only need to read this table.
+GRANT SELECT ON "app"."platform_admins" TO app_runtime;

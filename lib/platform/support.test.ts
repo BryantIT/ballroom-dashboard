@@ -53,7 +53,13 @@ describe("platform support sessions", () => {
       db
     );
     const [admin] = await db.insert(users).values({ email: "admin@example.com" }).returning();
-    await db.insert(platformAdmins).values({ userId: admin.id });
+    // Granting platform-admin status is an out-of-band DB operation, not
+    // something app_runtime ever does — app_runtime only has SELECT on
+    // platform_admins. Seed this fixture through the migrator connection.
+    const seedPool = new Pool({ connectionString: testDb.connectionUri });
+    const seedDb = drizzle(seedPool, { schema });
+    await seedDb.insert(platformAdmins).values({ userId: admin.id });
+    await seedPool.end();
 
     await expect(requireActiveSupportSession(admin.id, studioId, db)).rejects.toThrow();
 
