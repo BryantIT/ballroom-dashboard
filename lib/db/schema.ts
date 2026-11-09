@@ -183,3 +183,30 @@ export const memberships = appSchema.table(
   },
   (t) => [uniqueIndex("memberships_studio_user_unique").on(t.studioId, t.userId)]
 );
+
+// --- Phase 1: invitations — NOT tenant-owned, no RLS. Same exception
+// as the `permissions` table above, for a different reason: an invitee
+// has no studio membership yet, so accepting an invitation means looking
+// a row up by an unguessable token BEFORE any tenant context exists —
+// the same "pre-authentication, no tenant known yet" situation
+// auth.ts's authorizeCredentials() is already in against the `users`
+// table. Enforcement is entirely service-layer: lib/invitations/invitations.ts
+// never lists invitations without an explicit studioId filter, and never
+// accepts one whose status/expiry has already lapsed.
+export const invitations = appSchema.table("invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  email: text("email").notNull(),
+  roleId: uuid("role_id")
+    .notNull()
+    .references(() => roles.id),
+  token: text("token").notNull().unique(),
+  status: text("status").notNull().default("pending"),
+  invitedByUserId: text("invited_by_user_id")
+    .notNull()
+    .references(() => users.id),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});

@@ -71,6 +71,13 @@
       "when": 1794177782711,
       "tag": "0009_memberships_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794178695556,
+      "tag": "0010_medical_black_widow",
+      "breakpoints": true
     }
   ]
 }
