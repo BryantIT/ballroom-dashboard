@@ -40,3 +40,5 @@ GRANT SELECT, INSERT, UPDATE ON "app"."support_sessions" TO app_runtime;
 -- not an application code path. isPlatformAdmin()/requireActiveSupportSession()
 -- only need to read this table.
 GRANT SELECT ON "app"."platform_admins" TO app_runtime;
+GRANT SELECT, INSERT, UPDATE ON "app"."students" TO app_runtime;
+GRANT SELECT, INSERT, UPDATE ON "app"."student_assignments" TO app_runtime;

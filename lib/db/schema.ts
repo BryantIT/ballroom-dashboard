@@ -240,3 +240,33 @@ export const supportSessions = appSchema.table("support_sessions", {
   startedAt: timestamp("started_at").notNull().defaultNow(),
   endedAt: timestamp("ended_at"),
 });
+
+// --- Phase 1: minimal students stub. Intentionally bare — just enough
+// to prove the instructor assignment-scoped edit rule (spec acceptance
+// test #2). Phase 3 (domain boundary 3) EXTENDS this table with CRM
+// fields, notes, and student_relationships; it does not replace it,
+// unlike Phase 0's throwaway tenant_probe table.
+export const students = appSchema.table("students", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  displayName: text("display_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const studentAssignments = appSchema.table("student_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  instructorUserId: text("instructor_user_id")
+    .notNull()
+    .references(() => users.id),
+  isPrimary: boolean("is_primary").notNull().default(true),
+  effectiveAt: timestamp("effective_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+});
