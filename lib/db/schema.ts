@@ -210,3 +210,33 @@ export const invitations = appSchema.table("invitations", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+// --- Phase 1: platform support-only control plane.
+// platform_admins is NOT tenant-owned (global staff flag, no RLS — same
+// exception as `permissions`/`users`). support_sessions IS tenant-owned
+// and RLS-protected like any other studio table; the security boundary
+// here is NOT "RLS lets admins in" — it's the opposite: service-layer
+// code in lib/platform/support.ts refuses to open a tenant context for
+// an admin at all unless isPlatformAdmin() and (for every subsequent
+// read) requireActiveSupportSession() both pass, and every session is
+// audited by this table rather than being an implicit bypass. This is
+// the spec's explicit requirement: "access to tenant PII requires an
+// explicit audited support session, not an implicit global bypass."
+export const platformAdmins = appSchema.table("platform_admins", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id),
+});
+
+export const supportSessions = appSchema.table("support_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  adminUserId: text("admin_user_id")
+    .notNull()
+    .references(() => users.id),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  reason: text("reason").notNull(),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+});

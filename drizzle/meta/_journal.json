@@ -78,6 +78,20 @@
       "when": 1794178695556,
       "tag": "0010_medical_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794265616365,
+      "tag": "0011_wise_post",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794265633678,
+      "tag": "0012_support_sessions_rls",
+      "breakpoints": true
     }
   ]
 }

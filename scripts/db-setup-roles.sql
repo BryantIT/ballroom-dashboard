@@ -33,3 +33,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "app"."roles" TO app_runtime;
 GRANT SELECT, INSERT, DELETE ON "app"."role_permissions" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."memberships" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."invitations" TO app_runtime;
+GRANT SELECT, INSERT, UPDATE ON "app"."support_sessions" TO app_runtime;
+-- INSERT is needed because provisioning a platform admin happens through
+-- the same app_runtime-role connection as everything else (see
+-- lib/platform/support.test.ts); it is not an RLS bypass since
+-- platform_admins carries no tenant data and has no RLS policy at all.
+GRANT SELECT, INSERT ON "app"."platform_admins" TO app_runtime;
