@@ -1,7 +1,8 @@
 // app/api/v1/studios/[studioId]/students/[studentId]/route.ts
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { verifySession } from "@/lib/dal";
+import { z } from "zod";
+import { verifyApiSession } from "@/lib/dal";
 import { getActiveMembership } from "@/lib/auth/authorization";
 import { canEditStudent } from "@/lib/students/authorization";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
@@ -13,7 +14,17 @@ export async function PATCH(
   { params }: { params: Promise<{ studioId: string; studentId: string }> }
 ) {
   const { studioId, studentId } = await params;
-  const { userId } = await verifySession();
+  if (!z.uuid().safeParse(studioId).success) {
+    return NextResponse.json({ error: "Invalid studioId" }, { status: 400 });
+  }
+  if (!z.uuid().safeParse(studentId).success) {
+    return NextResponse.json({ error: "Invalid studentId" }, { status: 400 });
+  }
+  const session = await verifyApiSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId } = session;
   const body = updateStudentSchema.safeParse(await request.json());
   if (!body.success) {
     return NextResponse.json({ error: body.error.flatten() }, { status: 400 });
@@ -31,6 +42,10 @@ export async function PATCH(
       .where(eq(students.id, studentId))
       .returning()
   );
+
+  if (!updated) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   return NextResponse.json(updated);
 }

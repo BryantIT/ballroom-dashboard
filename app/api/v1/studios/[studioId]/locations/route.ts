@@ -1,6 +1,7 @@
 // app/api/v1/studios/[studioId]/locations/route.ts
 import { NextResponse } from "next/server";
-import { verifySession } from "@/lib/dal";
+import { z } from "zod";
+import { verifyApiSession } from "@/lib/dal";
 import { requirePermission, PermissionDeniedError } from "@/lib/auth/authorization";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { locations } from "@/lib/db/schema";
@@ -11,7 +12,14 @@ export async function POST(
   { params }: { params: Promise<{ studioId: string }> }
 ) {
   const { studioId } = await params;
-  const { userId } = await verifySession();
+  if (!z.uuid().safeParse(studioId).success) {
+    return NextResponse.json({ error: "Invalid studioId" }, { status: 400 });
+  }
+  const session = await verifyApiSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId } = session;
   const body = createLocationSchema.safeParse(await request.json());
   if (!body.success) {
     return NextResponse.json({ error: body.error.flatten() }, { status: 400 });

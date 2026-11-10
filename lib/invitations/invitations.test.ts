@@ -14,15 +14,28 @@ describe("invitations", () => {
   let createInvitation: typeof import("./invitations").createInvitation;
   let lookupInvitationByToken: typeof import("./invitations").lookupInvitationByToken;
   let acceptInvitation: typeof import("./invitations").acceptInvitation;
+  let InvitationNotPendingError: typeof import("./invitations").InvitationNotPendingError;
+  let InvitationEmailMismatchError: typeof import("./invitations").InvitationEmailMismatchError;
+  let InvitationAlreadyMemberError: typeof import("./invitations").InvitationAlreadyMemberError;
+  let InvalidRoleError: typeof import("./invitations").InvalidRoleError;
 
   beforeAll(async () => {
     testDb = await createTestDatabase();
     process.env.DATABASE_RUNTIME_URL = testDb.runtimeConnectionUri;
     pool = new Pool({ connectionString: testDb.runtimeConnectionUri });
     ({ provisionStudio } = await import("../studios/provision"));
-    ({ createInvitation, lookupInvitationByToken, acceptInvitation } = await import(
-      "./invitations"
-    ));
+    // Error classes are imported dynamically alongside the functions (the
+    // module must load after DATABASE_RUNTIME_URL is set), so instanceof
+    // checks compare against the same class identity the code throws.
+    ({
+      createInvitation,
+      lookupInvitationByToken,
+      acceptInvitation,
+      InvitationNotPendingError,
+      InvitationEmailMismatchError,
+      InvitationAlreadyMemberError,
+      InvalidRoleError,
+    } = await import("./invitations"));
   }, 60_000);
 
   afterAll(async () => {
@@ -101,7 +114,9 @@ describe("invitations", () => {
       .where(eq(schema.invitations.token, token));
 
     const [invitee] = await db.insert(users).values({ email: "late@example.com" }).returning();
-    await expect(acceptInvitation(token, invitee.id, db)).rejects.toThrow();
+    await expect(acceptInvitation(token, invitee.id, db)).rejects.toThrow(
+      InvitationNotPendingError
+    );
   });
 
   test("an already-accepted invitation cannot be accepted again", async () => {
@@ -115,8 +130,64 @@ describe("invitations", () => {
     const [invitee] = await db.insert(users).values({ email: "twice@example.com" }).returning();
     await acceptInvitation(token, invitee.id, db);
 
-    const [invitee2] = await db.insert(users).values({ email: "twice2@example.com" }).returning();
-    await expect(acceptInvitation(token, invitee2.id, db)).rejects.toThrow();
+    // Re-accept with the same (email-matching) account: with email binding
+    // enforced, a different account would now fail on the email check
+    // first and never exercise the already-accepted path.
+    await expect(acceptInvitation(token, invitee.id, db)).rejects.toThrow(
+      InvitationNotPendingError
+    );
+  });
+
+  test("an invitation cannot be accepted by an account with a different email", async () => {
+    const db = drizzle(pool, { schema });
+    const { studioId, adminRoleId, owner } = await setupStudioWithAdminRole(db);
+
+    const { token } = await createInvitation(
+      { studioId, email: "intended@example.com", roleId: adminRoleId, invitedByUserId: owner.id },
+      db
+    );
+    const [other] = await db.insert(users).values({ email: "forwarded-to@example.com" }).returning();
+    await expect(acceptInvitation(token, other.id, db)).rejects.toThrow(
+      InvitationEmailMismatchError
+    );
+  });
+
+  test("an invitation cannot be accepted by an account that is already a member of the studio", async () => {
+    const db = drizzle(pool, { schema });
+    const { studioId, adminRoleId, owner } = await setupStudioWithAdminRole(db);
+
+    const { token: tokenX } = await createInvitation(
+      { studioId, email: "member@example.com", roleId: adminRoleId, invitedByUserId: owner.id },
+      db
+    );
+    const { token: tokenY } = await createInvitation(
+      { studioId, email: "member@example.com", roleId: adminRoleId, invitedByUserId: owner.id },
+      db
+    );
+    const [invitee] = await db.insert(users).values({ email: "member@example.com" }).returning();
+    await acceptInvitation(tokenX, invitee.id, db);
+
+    await expect(acceptInvitation(tokenY, invitee.id, db)).rejects.toThrow(
+      InvitationAlreadyMemberError
+    );
+  });
+
+  test("an invitation cannot be created with a role from a different studio", async () => {
+    const db = drizzle(pool, { schema });
+    const { studioId: studioA, owner: ownerA } = await setupStudioWithAdminRole(db);
+    const { adminRoleId: studioBAdminRoleId } = await setupStudioWithAdminRole(db);
+
+    await expect(
+      createInvitation(
+        {
+          studioId: studioA,
+          email: "crossrole@example.com",
+          roleId: studioBAdminRoleId,
+          invitedByUserId: ownerA.id,
+        },
+        db
+      )
+    ).rejects.toThrow(InvalidRoleError);
   });
 
   test("an unknown token returns null from lookupInvitationByToken", async () => {

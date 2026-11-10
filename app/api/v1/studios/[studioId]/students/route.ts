@@ -1,6 +1,7 @@
 // app/api/v1/studios/[studioId]/students/route.ts
 import { NextResponse } from "next/server";
-import { verifySession } from "@/lib/dal";
+import { z } from "zod";
+import { verifyApiSession } from "@/lib/dal";
 import { requirePermission, PermissionDeniedError } from "@/lib/auth/authorization";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { students } from "@/lib/db/schema";
@@ -10,7 +11,14 @@ export async function GET(
   { params }: { params: Promise<{ studioId: string }> }
 ) {
   const { studioId } = await params;
-  const { userId } = await verifySession();
+  if (!z.uuid().safeParse(studioId).success) {
+    return NextResponse.json({ error: "Invalid studioId" }, { status: 400 });
+  }
+  const session = await verifyApiSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId } = session;
 
   try {
     await requirePermission(userId, studioId, "students.read");
