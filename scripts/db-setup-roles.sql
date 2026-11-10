@@ -23,7 +23,6 @@ GRANT USAGE ON SCHEMA app TO app_runtime;
 -- they must run after app_runtime is created above, and migrations run
 -- before this script in the documented order (schema "app" must exist
 -- before this script's "GRANT USAGE ON SCHEMA app" above can succeed).
-GRANT SELECT, INSERT ON "app"."tenant_probe" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "user", "account", "session", "verificationToken" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."studios" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE, DELETE ON "app"."locations" TO app_runtime;

@@ -68,18 +68,7 @@ export const verificationTokens = pgTable(
   (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })]
 );
 
-// --- RLS probe (Phase 0 only) ---
-// Exists solely to prove the tenant-context/RLS plumbing end-to-end before
-// any real business table exists. Phase 1 introduces the real `studios`
-// and `memberships` tables; once that lands, this table and its one route
-// handler (Task 8) should be dropped.
 export const appSchema = pgSchema("app");
-
-export const tenantProbe = appSchema.table("tenant_probe", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  studioId: uuid("studio_id").notNull(),
-  label: text("label").notNull(),
-});
 
 // --- Phase 1: Platform & Studio ---
 // studios.id is NOT auto-generated: lib/studios/provision.ts (Task 5)

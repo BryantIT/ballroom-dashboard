@@ -4,7 +4,6 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { createTestDatabase, type TestDatabase } from "./testing/test-database";
 import type { withTenantContext as WithTenantContext } from "./with-tenant-context";
-import { tenantProbe } from "./schema";
 import * as schema from "./schema";
 
 describe("withTenantContext", () => {
@@ -28,19 +27,24 @@ describe("withTenantContext", () => {
     await testDb.stop();
   });
 
+  // Phase 0's throwaway tenant_probe table (and its tests) is decommissioned
+  // in Phase 1 (Task 11) now that real tenant-owned tables exist. These
+  // scenarios are ported onto `studios` — the simplest real RLS-protected
+  // table (policy: `id::text = current_setting('app.tenant_id', true)`) —
+  // preserving the original assertions.
   test("a query run without a tenantId sees zero rows", async () => {
     const seedPool = new Pool({ connectionString: testDb.connectionUri });
     const seedDb = drizzle(seedPool, { schema });
-    await seedDb.insert(tenantProbe).values({
-      studioId: "66666666-6666-6666-6666-666666666666",
-      label: "seeded",
+    await seedDb.insert(schema.studios).values({
+      id: "66666666-6666-6666-6666-666666666666",
+      name: "seeded",
     });
     await seedPool.end();
 
     const db = drizzle(pool, { schema });
     const rows = await withTenantContext(
       { userId: "test-user", tenantId: null },
-      (tx) => tx.select().from(tenantProbe),
+      (tx) => tx.select().from(schema.studios),
       db
     );
 
@@ -51,21 +55,21 @@ describe("withTenantContext", () => {
     const seedPool = new Pool({ connectionString: testDb.connectionUri });
     const seedDb = drizzle(seedPool, { schema });
     const studioId = "77777777-7777-7777-7777-777777777777";
-    await seedDb.insert(tenantProbe).values([
-      { studioId, label: "mine" },
-      { studioId: "88888888-8888-8888-8888-888888888888", label: "not-mine" },
+    await seedDb.insert(schema.studios).values([
+      { id: studioId, name: "mine" },
+      { id: "88888888-8888-8888-8888-888888888888", name: "not-mine" },
     ]);
     await seedPool.end();
 
     const db = drizzle(pool, { schema });
     const rows = await withTenantContext(
       { userId: "test-user", tenantId: studioId },
-      (tx) => tx.select().from(tenantProbe),
+      (tx) => tx.select().from(schema.studios),
       db
     );
 
     expect(rows).toHaveLength(1);
-    expect(rows[0].label).toBe("mine");
+    expect(rows[0].name).toBe("mine");
   });
 
   test("does not leak tenant context across calls sharing one pooled connection", async () => {
@@ -73,9 +77,9 @@ describe("withTenantContext", () => {
     const seedDb = drizzle(seedPool, { schema });
     const studioA = "cccccccc-cccc-cccc-cccc-cccccccccccc";
     const studioB = "dddddddd-dddd-dddd-dddd-dddddddddddd";
-    await seedDb.insert(tenantProbe).values([
-      { studioId: studioA, label: "a" },
-      { studioId: studioB, label: "b" },
+    await seedDb.insert(schema.studios).values([
+      { id: studioA, name: "a" },
+      { id: studioB, name: "b" },
     ]);
     await seedPool.end();
 
@@ -90,26 +94,26 @@ describe("withTenantContext", () => {
 
     const asStudioA = await withTenantContext(
       { userId: "test-user", tenantId: studioA },
-      (tx) => tx.select().from(tenantProbe),
+      (tx) => tx.select().from(schema.studios),
       singleConnDb
     );
     expect(asStudioA).toHaveLength(1);
-    expect(asStudioA[0].studioId).toBe(studioA);
+    expect(asStudioA[0].id).toBe(studioA);
 
     const withNoTenant = await withTenantContext(
       { userId: "test-user", tenantId: null },
-      (tx) => tx.select().from(tenantProbe),
+      (tx) => tx.select().from(schema.studios),
       singleConnDb
     );
     expect(withNoTenant).toHaveLength(0);
 
     const asStudioB = await withTenantContext(
       { userId: "test-user", tenantId: studioB },
-      (tx) => tx.select().from(tenantProbe),
+      (tx) => tx.select().from(schema.studios),
       singleConnDb
     );
     expect(asStudioB).toHaveLength(1);
-    expect(asStudioB[0].studioId).toBe(studioB);
+    expect(asStudioB[0].id).toBe(studioB);
 
     await singleConnPool.end();
   });

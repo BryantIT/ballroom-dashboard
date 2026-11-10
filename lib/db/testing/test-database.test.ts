@@ -3,7 +3,13 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Client } from "pg";
 import { createTestDatabase, type TestDatabase } from "./test-database";
 
-describe("tenant_probe RLS", () => {
+// Phase 0's throwaway tenant_probe table is decommissioned in Phase 1
+// (Task 11) now that real tenant-owned tables exist. These scenarios are
+// ported onto `studios` — the simplest real RLS-protected table (policy:
+// `id::text = current_setting('app.tenant_id', true)`) — preserving the
+// original assertions (see lib/db/with-tenant-context.test.ts for the
+// Drizzle-level equivalent of the first three).
+describe("RLS enforcement (regression, now against real tables)", () => {
   let testDb: TestDatabase;
 
   beforeAll(async () => {
@@ -20,7 +26,7 @@ describe("tenant_probe RLS", () => {
     const studioA = "11111111-1111-1111-1111-111111111111";
     const studioB = "22222222-2222-2222-2222-222222222222";
     await seedClient.query(
-      `INSERT INTO "app"."tenant_probe" (studio_id, label) VALUES ($1, 'a'), ($2, 'b')`,
+      `INSERT INTO "app"."studios" (id, name) VALUES ($1, 'a'), ($2, 'b')`,
       [studioA, studioB]
     );
     await seedClient.end();
@@ -30,7 +36,7 @@ describe("tenant_probe RLS", () => {
     });
     await runtimeClient.connect();
     const result = await runtimeClient.query(
-      `SELECT * FROM "app"."tenant_probe"`
+      `SELECT * FROM "app"."studios"`
     );
     await runtimeClient.end();
 
@@ -43,7 +49,7 @@ describe("tenant_probe RLS", () => {
     const studioA = "33333333-3333-3333-3333-333333333333";
     const studioB = "44444444-4444-4444-4444-444444444444";
     await seedClient.query(
-      `INSERT INTO "app"."tenant_probe" (studio_id, label) VALUES ($1, 'a'), ($2, 'b')`,
+      `INSERT INTO "app"."studios" (id, name) VALUES ($1, 'a'), ($2, 'b')`,
       [studioA, studioB]
     );
     await seedClient.end();
@@ -58,13 +64,13 @@ describe("tenant_probe RLS", () => {
       [studioA]
     );
     const result = await runtimeClient.query(
-      `SELECT * FROM "app"."tenant_probe"`
+      `SELECT * FROM "app"."studios"`
     );
     await runtimeClient.query("COMMIT");
     await runtimeClient.end();
 
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].studio_id).toBe(studioA);
+    expect(result.rows[0].id).toBe(studioA);
   });
 
   test("SET LOCAL does not leak tenant context across transactions on the same connection", async () => {
@@ -72,7 +78,7 @@ describe("tenant_probe RLS", () => {
     await seedClient.connect();
     const studioA = "55555555-5555-5555-5555-555555555555";
     await seedClient.query(
-      `INSERT INTO "app"."tenant_probe" (studio_id, label) VALUES ($1, 'a')`,
+      `INSERT INTO "app"."studios" (id, name) VALUES ($1, 'a')`,
       [studioA]
     );
     await seedClient.end();
@@ -87,13 +93,13 @@ describe("tenant_probe RLS", () => {
       `SELECT set_config('app.tenant_id', $1, true)`,
       [studioA]
     );
-    await runtimeClient.query(`SELECT * FROM "app"."tenant_probe"`);
+    await runtimeClient.query(`SELECT * FROM "app"."studios"`);
     await runtimeClient.query("COMMIT");
 
     // New transaction on the SAME connection, no set_config call.
     await runtimeClient.query("BEGIN");
     const result = await runtimeClient.query(
-      `SELECT * FROM "app"."tenant_probe"`
+      `SELECT * FROM "app"."studios"`
     );
     await runtimeClient.query("COMMIT");
     await runtimeClient.end();
@@ -117,13 +123,13 @@ describe("tenant_probe RLS", () => {
     expect(roleAttrs.rows[0].rolbypassrls).toBe(false);
 
     const owner = await runtimeClient.query(
-      `select relowner::regrole::text as owner from pg_class where oid = '"app"."tenant_probe"'::regclass`
+      `select relowner::regrole::text as owner from pg_class where oid = '"app"."studios"'::regclass`
     );
     expect(owner.rows[0].owner).not.toBe("app_runtime");
 
     await expect(
       runtimeClient.query(
-        `alter table "app"."tenant_probe" disable row level security`
+        `alter table "app"."studios" disable row level security`
       )
     ).rejects.toThrow();
 
