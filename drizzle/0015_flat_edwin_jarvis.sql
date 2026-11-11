@@ -1,0 +1,1 @@
+DROP TABLE "app"."tenant_probe" CASCADE;
