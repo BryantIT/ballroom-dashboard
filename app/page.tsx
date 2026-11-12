@@ -10,9 +10,25 @@ import { Button } from "@/components/ui/button";
 // The public, pre-auth splash page for a studio's branded subdomain.
 // Extracted so it can be rendered directly in tests without a real
 // session/DB/host header.
+// Studio-level colorMode is a public "front door" decision: when the
+// owner has explicitly picked "light" or "dark", the splash page should
+// render in that mode regardless of the visitor's OS preference. "system"
+// forces nothing, leaving the existing next-themes system-preference
+// detection (configured at the root layout) in control.
+function forceModeFor(colorMode: PublicBranding["colorMode"]): "light" | "dark" | undefined {
+  if (colorMode === "light" || colorMode === "dark") {
+    return colorMode;
+  }
+  return undefined;
+}
+
 export function BrandedSplash({ branding }: { branding: PublicBranding }) {
   return (
-    <ThemeRoot preset={branding.themePreset} accentOverride={branding.accentColorOverride}>
+    <ThemeRoot
+      preset={branding.themePreset}
+      accentOverride={branding.accentColorOverride}
+      forceMode={forceModeFor(branding.colorMode)}
+    >
       <div className="flex min-h-full flex-1 flex-col items-center justify-center gap-6 p-8 text-center">
         {branding.logoUrl ? (
           // Studio logos are user-uploaded (lib/branding/logo.ts), not an
@@ -21,7 +37,7 @@ export function BrandedSplash({ branding }: { branding: PublicBranding }) {
           <img
             src={branding.logoUrl}
             alt={branding.studioName}
-            className="h-16 w-16 rounded-md object-cover"
+            className="h-16 w-16 rounded-md object-contain"
           />
         ) : (
           <div

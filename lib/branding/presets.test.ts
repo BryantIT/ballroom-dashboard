@@ -25,4 +25,22 @@ describe("buildThemeCss", () => {
     const css = buildThemeCss("midnight", null);
     expect(css).toContain("--primary: #c9a24b");
   });
+
+  test("forceMode: 'light' emits the light token set in both the light and .dark rules", () => {
+    const css = buildThemeCss("ocean", null, "light");
+    expect(css.match(/--background: #eef5f6/g)).toHaveLength(2);
+    expect(css).not.toContain("#0e1f24");
+  });
+
+  test("forceMode: 'dark' emits the dark token set in both the light and .dark rules", () => {
+    const css = buildThemeCss("ocean", null, "dark");
+    expect(css.match(/--background: #0e1f24/g)).toHaveLength(2);
+    expect(css).not.toContain("#eef5f6");
+  });
+
+  test("omitting forceMode keeps today's dual light/dark output", () => {
+    const css = buildThemeCss("ocean");
+    expect(css).toContain("--background: #eef5f6");
+    expect(css).toContain("--background: #0e1f24");
+  });
 });

@@ -173,7 +173,8 @@ export const THEME_PRESETS: Record<
 
 export function buildThemeCss(
   preset: ThemePresetKey,
-  accentOverride?: string | null
+  accentOverride?: string | null,
+  forceMode?: "light" | "dark"
 ): string {
   const base = THEME_PRESETS[preset];
   const light: ThemeTokens = { ...base.light };
@@ -183,6 +184,17 @@ export function buildThemeCss(
     dark.primary = accentOverride;
   }
 
-  return `[data-theme-root] { --background: ${light.background}; --foreground: ${light.foreground}; --card: ${light.card}; --card-foreground: ${light.cardForeground}; --primary: ${light.primary}; --primary-foreground: ${light.primaryForeground}; --muted: ${light.muted}; --muted-foreground: ${light.mutedForeground}; --border: ${light.border}; }
-.dark [data-theme-root] { --background: ${dark.background}; --foreground: ${dark.foreground}; --card: ${dark.card}; --card-foreground: ${dark.cardForeground}; --primary: ${dark.primary}; --primary-foreground: ${dark.primaryForeground}; --muted: ${dark.muted}; --muted-foreground: ${dark.mutedForeground}; --border: ${dark.border}; }`;
+  // When forceMode is set, emit the SAME token set for both the
+  // [data-theme-root] rule and the .dark [data-theme-root] rule, so the
+  // result is mode-locked regardless of whether the .dark class is
+  // present on <html>. Otherwise, behavior is unchanged: the light tokens
+  // apply by default and the dark tokens apply under .dark.
+  const lightRuleTokens = forceMode === "dark" ? dark : light;
+  const darkRuleTokens = forceMode === "light" ? light : dark;
+
+  const tokensToCss = (tokens: ThemeTokens) =>
+    `--background: ${tokens.background}; --foreground: ${tokens.foreground}; --card: ${tokens.card}; --card-foreground: ${tokens.cardForeground}; --primary: ${tokens.primary}; --primary-foreground: ${tokens.primaryForeground}; --muted: ${tokens.muted}; --muted-foreground: ${tokens.mutedForeground}; --border: ${tokens.border};`;
+
+  return `[data-theme-root] { ${tokensToCss(lightRuleTokens)} }
+.dark [data-theme-root] { ${tokensToCss(darkRuleTokens)} }`;
 }
