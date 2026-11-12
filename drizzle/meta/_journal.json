@@ -127,6 +127,13 @@
       "when": 1794511242481,
       "tag": "0017_seed_branding_manage_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794517492005,
+      "tag": "0018_backfill_branding_and_permission",
+      "breakpoints": true
     }
   ]
 }
