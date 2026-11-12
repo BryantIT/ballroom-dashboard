@@ -31,6 +31,12 @@ describe("permission catalog", () => {
     expect(seededCodes).toEqual([...PERMISSION_CODES].sort());
   });
 
+  test("branding.manage is owner-only, matching locations.manage", () => {
+    expect(BUILTIN_ROLE_PERMISSIONS.owner).toContain("branding.manage");
+    expect(BUILTIN_ROLE_PERMISSIONS.admin).not.toContain("branding.manage");
+    expect(BUILTIN_ROLE_PERMISSIONS.instructor).not.toContain("branding.manage");
+  });
+
   test("every code granted to a built-in role is a real permission code", () => {
     for (const role of Object.keys(BUILTIN_ROLE_PERMISSIONS) as Array<
       keyof typeof BUILTIN_ROLE_PERMISSIONS
