@@ -44,6 +44,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     sessionsTable: schema.sessions,
     verificationTokensTable: schema.verificationTokens,
   }),
+  // Without this, a failed credentials attempt redirects to NextAuth's
+  // built-in /api/auth/signin?error=... page instead of the app's own
+  // /login — the canonical sign-in page per Phase 2.
+  pages: { signIn: "/login" },
   session: { strategy: "jwt" },
   providers: [
     Credentials({
