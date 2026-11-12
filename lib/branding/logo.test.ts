@@ -33,9 +33,29 @@ describe("uploadLogo", () => {
     const url = await uploadLogo("studio-1", fakeFile("image/png", 1000), put);
     expect(url).toBe("https://blob.example/studio-1-logo.png");
     expect(put).toHaveBeenCalledWith(
-      expect.stringContaining("studio-1"),
+      expect.stringMatching(/^studio-logos\/studio-1-\d+\.png$/),
       expect.anything(),
-      expect.objectContaining({ access: "public" })
+      expect.objectContaining({ access: "public", contentType: "image/png" })
+    );
+  });
+
+  test("derives the pathname extension and contentType from a JPEG file", async () => {
+    const put = vi.fn().mockResolvedValue({ url: "https://blob.example/studio-1-logo.jpg" });
+    await uploadLogo("studio-1", fakeFile("image/jpeg", 1000), put);
+    expect(put).toHaveBeenCalledWith(
+      expect.stringMatching(/^studio-logos\/studio-1-\d+\.jpg$/),
+      expect.anything(),
+      expect.objectContaining({ access: "public", contentType: "image/jpeg" })
+    );
+  });
+
+  test("derives the pathname extension and contentType from an SVG file", async () => {
+    const put = vi.fn().mockResolvedValue({ url: "https://blob.example/studio-1-logo.svg" });
+    await uploadLogo("studio-1", fakeFile("image/svg+xml", 1000), put);
+    expect(put).toHaveBeenCalledWith(
+      expect.stringMatching(/^studio-logos\/studio-1-\d+\.svg$/),
+      expect.anything(),
+      expect.objectContaining({ access: "public", contentType: "image/svg+xml" })
     );
   });
 });

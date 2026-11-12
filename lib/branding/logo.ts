@@ -20,6 +20,17 @@ export const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 export const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/svg+xml"] as const;
 
+// @vercel/blob's content-type inference depends on the pathname's
+// extension. An SVG served with the wrong content-type won't render in an
+// <img> tag — browsers don't sniff SVG the way they sniff PNG/JPEG — so
+// both the extension (in the pathname) and an explicit contentType are
+// required below.
+const LOGO_FILE_EXTENSIONS: Record<(typeof ALLOWED_LOGO_TYPES)[number], string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/svg+xml": "svg",
+};
+
 export async function uploadLogo(studioId: string, file: File, put?: Put): Promise<string> {
   const putBlob = put ?? (await import("@vercel/blob")).put;
 
@@ -34,7 +45,11 @@ export async function uploadLogo(studioId: string, file: File, put?: Put): Promi
     );
   }
 
-  const blob = await putBlob(`studio-logos/${studioId}-${Date.now()}`, file, { access: "public" });
+  const extension = LOGO_FILE_EXTENSIONS[file.type as (typeof ALLOWED_LOGO_TYPES)[number]];
+  const blob = await putBlob(`studio-logos/${studioId}-${Date.now()}.${extension}`, file, {
+    access: "public",
+    contentType: file.type,
+  });
   return blob.url;
 }
 
