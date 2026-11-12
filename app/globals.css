@@ -12,6 +12,7 @@
   --muted: #f1f5f9;
   --muted-foreground: #64748b;
   --border: #e2e8f0;
+  --destructive: #dc2626;
   --radius: 0.75rem;
 }
 
@@ -25,6 +26,7 @@
   --muted: #1b2332;
   --muted-foreground: #94a3b8;
   --border: #1f2a3d;
+  --destructive: #f87171;
 }
 
 @theme inline {
@@ -37,6 +39,7 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-destructive: var(--destructive);
   --radius-lg: var(--radius);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
