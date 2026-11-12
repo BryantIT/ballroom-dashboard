@@ -24,6 +24,27 @@ export type UpdateBrandingInput = {
   slug?: string;
 };
 
+// node-postgres surfaces a Postgres unique-violation as a plain Error with
+// extra fields attached (not a typed class) — see pg's DatabaseError. Drizzle
+// then wraps that in its own DrizzleQueryError, with the original pg error
+// attached as `.cause` rather than spread onto the wrapper itself, so both
+// the error and its cause need checking. Postgres error code 23505 is
+// unique_violation; checking the specific constraint name too (rather than
+// just the code) avoids misattributing an unrelated unique violation on
+// this table to a slug conflict.
+function isSlugUniqueViolation(error: unknown): boolean {
+  const matches = (candidate: unknown): boolean =>
+    typeof candidate === "object" &&
+    candidate !== null &&
+    (candidate as { code?: unknown }).code === "23505" &&
+    (candidate as { constraint?: unknown }).constraint === "studio_branding_slug_unique";
+
+  if (matches(error)) {
+    return true;
+  }
+  return matches(error instanceof Error ? error.cause : undefined);
+}
+
 // studio_branding has no RLS (see the schema.ts comment on that table), so
 // this lookup by studioId is a plain, unscoped read — same as the first
 // query in getPublicBrandingBySlug (Task 5). studios DOES have RLS
@@ -95,10 +116,23 @@ export async function updateBranding(
     }
   }
 
-  await db
-    .update(studioBranding)
-    .set({ ...input, updatedAt: new Date() })
-    .where(eq(studioBranding.studioId, studioId));
+  try {
+    await db
+      .update(studioBranding)
+      .set({ ...input, updatedAt: new Date() })
+      .where(eq(studioBranding.studioId, studioId));
+  } catch (error) {
+    // Second layer of defense for the race window between the pre-check
+    // above and this write: if another request's update committed a
+    // conflicting slug in between, Postgres's own unique constraint
+    // catches it here. Translate that into the same clear SlugTakenError
+    // the pre-check throws, instead of letting a raw 23505 surface as a
+    // generic 500 at the route layer.
+    if (input.slug !== undefined && isSlugUniqueViolation(error)) {
+      throw new SlugTakenError(input.slug);
+    }
+    throw error;
+  }
 
   return getBrandingByStudioId(studioId, db);
 }

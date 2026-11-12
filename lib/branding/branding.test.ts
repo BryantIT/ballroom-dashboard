@@ -121,4 +121,40 @@ describe("branding read/update", () => {
 
     expect(result.slug).toBe("new-slug");
   });
+
+  test("a slug conflict committed after the pre-check but before the update still fails as SlugTakenError, not a raw DB error", async () => {
+    const { ownerId, studioId } = await provisionWithInstructor("Studio F");
+    const other = await provisionWithInstructor("Studio G");
+    const db = drizzle(pool, { schema });
+
+    // Reproduce the race window the pre-check alone can't close: hold an
+    // UNCOMMITTED write of the target slug onto a different studio's row.
+    // Postgres's own unique index makes updateBranding's pre-check SELECT
+    // below genuinely unable to see this (MVCC: uncommitted data from
+    // another transaction is invisible), so it passes clean — then this
+    // test's own UPDATE blocks on the unique index until we COMMIT it,
+    // at which point updateBranding's UPDATE wakes up and hits the real
+    // 23505 for the first time, proving the catch-and-rethrow path (not
+    // the pre-check) is what turns it into SlugTakenError.
+    const raceClient = await pool.connect();
+    try {
+      await raceClient.query("BEGIN");
+      await raceClient.query('UPDATE app.studio_branding SET slug = $1 WHERE studio_id = $2', [
+        "race-slug",
+        other.studioId,
+      ]);
+
+      const updatePromise = updateBranding(ownerId, studioId, { slug: "race-slug" }, db);
+
+      // Give updateBranding's pre-check SELECT time to run (and find no
+      // conflict, since the row above is still uncommitted) before we
+      // commit it out from under the in-flight update.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await raceClient.query("COMMIT");
+
+      await expect(updatePromise).rejects.toThrow(SlugTakenError);
+    } finally {
+      raceClient.release();
+    }
+  });
 });
