@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { verifySession } from "@/lib/dal";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { memberships } from "@/lib/db/schema";
+import { hasPermission } from "@/lib/auth/authorization";
 import { getBrandingByStudioId } from "@/lib/branding/branding";
 import { ThemeRoot } from "@/lib/branding/theme-root";
 import { DashboardNav } from "./dashboard-nav";
@@ -44,11 +45,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   }
 
   const branding = await getBrandingByStudioId(membership.studioId);
+  const canManageBranding = await hasPermission(userId, membership.studioId, "branding.manage");
 
   return (
     <ThemeRoot preset={branding.themePreset} accentOverride={branding.accentColorOverride}>
       <div className="flex min-h-full flex-1 flex-col">
-        <DashboardNav branding={branding} />
+        <DashboardNav branding={branding} canManageBranding={canManageBranding} />
         <main className="flex flex-1 flex-col p-8">{children}</main>
       </div>
     </ThemeRoot>

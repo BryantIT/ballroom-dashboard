@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,6 +31,7 @@ type BrandingSettingsFormProps = {
 };
 
 export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsFormProps) {
+  const router = useRouter();
   const [themePreset, setThemePreset] = useState<ThemePresetKey>(initial.themePreset);
   const [accentColorOverride, setAccentColorOverride] = useState(
     initial.accentColorOverride ?? ""
@@ -82,6 +84,10 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
       }
 
       setStatus("saved");
+      // The server-rendered nav/ThemeRoot live in the parent layout, not
+      // this form — refresh so they re-render with the branding we just
+      // saved, without a full page reload.
+      router.refresh();
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -144,7 +150,7 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
         <input
           id="logo"
           type="file"
-          accept="image/png,image/svg+xml"
+          accept="image/png,image/jpeg,image/svg+xml"
           onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)}
           className="text-sm"
         />
