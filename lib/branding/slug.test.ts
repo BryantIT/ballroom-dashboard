@@ -1,6 +1,6 @@
 // lib/branding/slug.test.ts
 import { describe, expect, test } from "vitest";
-import { slugify, generateUniqueSlug } from "./slug";
+import { slugify, generateUniqueSlug, RESERVED_SLUGS } from "./slug";
 
 describe("slugify", () => {
   test("lowercases and hyphenates", () => {
@@ -30,5 +30,40 @@ describe("generateUniqueSlug", () => {
       async (candidate) => taken.has(candidate)
     );
     expect(result).toBe("starlight-ballroom-3");
+  });
+
+  test("skips a reserved slug even when isTaken reports it free", async () => {
+    // A studio literally named "App" would otherwise slugify to the
+    // reserved "app" — it must never be auto-assigned that slug.
+    const result = await generateUniqueSlug("App", async () => false);
+    expect(result).toBe("app-2");
+  });
+
+  test("keeps incrementing past a reserved numeric-suffixed candidate", async () => {
+    const taken = new Set(["dashboard-2"]);
+    const result = await generateUniqueSlug(
+      "Dashboard",
+      async (candidate) => taken.has(candidate)
+    );
+    expect(result).toBe("dashboard-3");
+  });
+});
+
+describe("RESERVED_SLUGS", () => {
+  test("contains the known infrastructure-colliding slugs", () => {
+    for (const slug of [
+      "app",
+      "www",
+      "api",
+      "admin",
+      "auth",
+      "mail",
+      "login",
+      "dashboard",
+      "static",
+      "assets",
+    ]) {
+      expect(RESERVED_SLUGS.has(slug)).toBe(true);
+    }
   });
 });

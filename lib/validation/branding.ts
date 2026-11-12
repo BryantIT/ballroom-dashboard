@@ -1,6 +1,7 @@
 // lib/validation/branding.ts
 import { z } from "zod";
 import { THEME_PRESET_KEYS } from "../branding/presets";
+import { RESERVED_SLUGS } from "../branding/slug";
 
 export const updateBrandingSchema = z.object({
   themePreset: z.enum(THEME_PRESET_KEYS).optional(),
@@ -15,5 +16,8 @@ export const updateBrandingSchema = z.object({
     .min(1)
     .max(63)
     .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+    .refine((slug) => !RESERVED_SLUGS.has(slug), {
+      message: "This slug is reserved and cannot be used",
+    })
     .optional(),
 });
