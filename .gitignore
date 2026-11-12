@@ -40,6 +40,9 @@ yarn-error.log*
 # git worktrees (local scratch, never committed)
 /.worktrees/
 
+# superpowers scratch (brainstorm mockups, SDD workspaces)
+/.superpowers/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
