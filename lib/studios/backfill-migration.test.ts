@@ -93,8 +93,12 @@ describe("0018 backfill migration", () => {
       .from(studioBranding)
       .where(eq(studioBranding.studioId, studioId));
     expect(brandingRow).toBeDefined();
-    expect(brandingRow.slug.startsWith("legacy-ballroom-co-")).toBe(true);
-    expect(brandingRow.slug.endsWith(studioId.slice(0, 8))).toBe(true);
+    // "Legacy Ballroom & Co." ends in a non-alphanumeric character, which
+    // collapses to a trailing hyphen before trimming — asserting against
+    // the real slug format (not just a startsWith prefix) catches that.
+    expect(brandingRow.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(brandingRow.slug.length).toBeLessThanOrEqual(63);
+    expect(brandingRow.slug).toBe(`legacy-ballroom-co-${studioId.slice(0, 8)}`);
 
     const [grantRow] = await db
       .select()
@@ -107,5 +111,40 @@ describe("0018 backfill migration", () => {
       );
     expect(grantRow).toBeDefined();
     expect(grantRow.studioId).toBe(studioId);
+  });
+
+  test("backfill slug is still valid against the schema's regex/length for a long, punctuation-only-at-the-end name", async () => {
+    const db = drizzle(pool, { schema });
+
+    const longName = "Z".repeat(60) + "!!!"; // forces truncation AND a trailing-hyphen collapse
+    const studioId = crypto.randomUUID();
+    await db.insert(studios).values({ id: studioId, name: longName });
+
+    await rerunBackfillMigration();
+
+    const [brandingRow] = await db
+      .select()
+      .from(studioBranding)
+      .where(eq(studioBranding.studioId, studioId));
+    expect(brandingRow).toBeDefined();
+    expect(brandingRow.slug).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+    expect(brandingRow.slug.length).toBeLessThanOrEqual(63);
+    expect(brandingRow.slug).toBe(`${"z".repeat(54)}-${studioId.slice(0, 8)}`);
+  });
+
+  test("backfill falls back to 'studio' when nothing alphanumeric survives", async () => {
+    const db = drizzle(pool, { schema });
+
+    const studioId = crypto.randomUUID();
+    await db.insert(studios).values({ id: studioId, name: "!!!" });
+
+    await rerunBackfillMigration();
+
+    const [brandingRow] = await db
+      .select()
+      .from(studioBranding)
+      .where(eq(studioBranding.studioId, studioId));
+    expect(brandingRow).toBeDefined();
+    expect(brandingRow.slug).toBe(`studio-${studioId.slice(0, 8)}`);
   });
 });
