@@ -15,6 +15,7 @@ describe("branding read/update", () => {
   let updateBranding: typeof import("./branding").updateBranding;
   let getBrandingByStudioId: typeof import("./branding").getBrandingByStudioId;
   let SlugTakenError: typeof import("./branding").SlugTakenError;
+  let StudioBrandingNotFoundError: typeof import("./branding").StudioBrandingNotFoundError;
   let PermissionDeniedError: typeof import("../auth/authorization").PermissionDeniedError;
   let withTenantContext: typeof import("../db/with-tenant-context").withTenantContext;
 
@@ -26,7 +27,8 @@ describe("branding read/update", () => {
     process.env.DATABASE_RUNTIME_URL = testDb.runtimeConnectionUri;
     pool = new Pool({ connectionString: testDb.runtimeConnectionUri });
     ({ provisionStudio } = await import("../studios/provision"));
-    ({ updateBranding, getBrandingByStudioId, SlugTakenError } = await import("./branding"));
+    ({ updateBranding, getBrandingByStudioId, SlugTakenError, StudioBrandingNotFoundError } =
+      await import("./branding"));
     ({ PermissionDeniedError } = await import("../auth/authorization"));
     ({ withTenantContext } = await import("../db/with-tenant-context"));
   }, 60_000);
@@ -78,6 +80,14 @@ describe("branding read/update", () => {
 
     return { ownerId: owner.id, instructorId: instructor.id, studioId, db };
   }
+
+  test("getBrandingByStudioId throws StudioBrandingNotFoundError for a well-formed but unknown studioId", async () => {
+    const db = drizzle(pool, { schema });
+
+    await expect(getBrandingByStudioId(crypto.randomUUID(), db)).rejects.toThrow(
+      StudioBrandingNotFoundError
+    );
+  });
 
   test("a non-owner cannot update branding", async () => {
     const { instructorId, studioId, db } = await provisionWithInstructor("Studio A");

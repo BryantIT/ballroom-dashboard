@@ -17,6 +17,13 @@ export class SlugTakenError extends Error {
   }
 }
 
+export class StudioBrandingNotFoundError extends Error {
+  constructor(studioId: string) {
+    super(`No branding row found for studio ${studioId}`);
+    this.name = "StudioBrandingNotFoundError";
+  }
+}
+
 export type UpdateBrandingInput = {
   themePreset?: ThemePresetKey;
   accentColorOverride?: string | null;
@@ -67,9 +74,10 @@ export async function getBrandingByStudioId(
     .where(eq(studioBranding.studioId, studioId))
     .limit(1);
   if (!branding) {
-    // A branding row always exists after provisioning (Task 2), so a
-    // missing row here means a bad studioId, not a legitimate empty state.
-    throw new Error(`No branding row found for studio ${studioId}`);
+    // A branding row always exists after provisioning (Task 2) and after
+    // the Phase 2 backfill migration (0018), so a missing row here means
+    // an unknown-but-valid-UUID studioId, not a legitimate empty state.
+    throw new StudioBrandingNotFoundError(studioId);
   }
 
   const [studioRow] = await db.transaction(async (tx) => {

@@ -105,6 +105,16 @@ describe("/api/v1/studios/{studioId}/branding", () => {
     expect(response.status).toBe(400);
   });
 
+  test("GET with a well-formed but unknown studioId returns 404, not 500", async () => {
+    const { ownerId } = await provisionWithInstructor("Unknown Studio Reader");
+    sessionUser.userId = ownerId;
+    const unknownStudioId = crypto.randomUUID();
+
+    const response = await GET(req(unknownStudioId), params(unknownStudioId));
+
+    expect(response.status).toBe(404);
+  });
+
   test("GET as the owner returns 200 with the branding shape", async () => {
     const { ownerId, studioId } = await provisionWithInstructor("Owner Read Studio");
     sessionUser.userId = ownerId;

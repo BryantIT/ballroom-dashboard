@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyApiSession } from "@/lib/dal";
 import { PermissionDeniedError } from "@/lib/auth/authorization";
-import { getBrandingByStudioId, updateBranding, SlugTakenError } from "@/lib/branding/branding";
+import {
+  getBrandingByStudioId,
+  updateBranding,
+  SlugTakenError,
+  StudioBrandingNotFoundError,
+} from "@/lib/branding/branding";
 import { updateBrandingSchema } from "@/lib/validation/branding";
 
 export async function GET(
@@ -19,9 +24,15 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const branding = await getBrandingByStudioId(studioId);
-
-  return NextResponse.json(branding);
+  try {
+    const branding = await getBrandingByStudioId(studioId);
+    return NextResponse.json(branding);
+  } catch (err) {
+    if (err instanceof StudioBrandingNotFoundError) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    throw err;
+  }
 }
 
 export async function PATCH(
