@@ -3,8 +3,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { eq } from "drizzle-orm";
 import { createTestDatabase, type TestDatabase } from "../db/testing/test-database";
-import { studios, locations, roles, rolePermissions, memberships, users } from "../db/schema";
+import {
+  studios,
+  locations,
+  roles,
+  rolePermissions,
+  memberships,
+  users,
+  studioBranding,
+} from "../db/schema";
 import * as schema from "../db/schema";
 import { BUILTIN_ROLE_PERMISSIONS } from "../auth/permissions";
 
@@ -67,6 +76,49 @@ describe("provisionStudio", () => {
     expect(membershipRows[0].roleId).toBe(ownerRole.id);
     expect(membershipRows[0].status).toBe("active");
 
+    expect(result.slug).toBe("starlight-ballroom");
+    const brandingRows = await verifyDb
+      .select()
+      .from(studioBranding)
+      .where(eq(studioBranding.studioId, result.studioId));
+    expect(brandingRows).toHaveLength(1);
+    expect(brandingRows[0].themePreset).toBe("midnight");
+    expect(brandingRows[0].colorMode).toBe("system");
+
     await verifyPool.end();
+  });
+
+  test("provisioning two more studios with the same name produces unique slugs", async () => {
+    // Note: the preceding test in this describe already provisioned a
+    // "Starlight Ballroom" (slug "starlight-ballroom") against the same
+    // shared test database, so the next two provisions here land on
+    // "-2" and "-3" rather than the base slug and "-2" — this still
+    // exercises the same sequential-suffix behavior.
+    const seedPool = new Pool({ connectionString: testDb.connectionUri });
+    const seedDb = drizzle(seedPool, { schema });
+    const [ownerOne] = await seedDb
+      .insert(users)
+      .values({ email: "owner-one@example.com" })
+      .returning();
+    const [ownerTwo] = await seedDb
+      .insert(users)
+      .values({ email: "owner-two@example.com" })
+      .returning();
+    await seedPool.end();
+
+    const { provisionStudio } = await import("./provision");
+    const db = drizzle(pool, { schema });
+
+    const resultOne = await provisionStudio(
+      { ownerId: ownerOne.id, studioName: "Starlight Ballroom", timezone: "America/Chicago" },
+      db
+    );
+    const resultTwo = await provisionStudio(
+      { ownerId: ownerTwo.id, studioName: "Starlight Ballroom", timezone: "America/Chicago" },
+      db
+    );
+
+    expect(resultOne.slug).toBe("starlight-ballroom-2");
+    expect(resultTwo.slug).toBe("starlight-ballroom-3");
   });
 });

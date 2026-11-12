@@ -1,10 +1,12 @@
 // lib/studios/provision.ts
 import "server-only";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { eq } from "drizzle-orm";
 import { withTenantContext } from "../db/with-tenant-context";
-import { studios, locations, roles, rolePermissions, memberships } from "../db/schema";
+import { studios, locations, roles, rolePermissions, memberships, studioBranding } from "../db/schema";
 import * as schema from "../db/schema";
 import { BUILTIN_ROLES, BUILTIN_ROLE_PERMISSIONS } from "../auth/permissions";
+import { generateUniqueSlug } from "../branding/slug";
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -18,6 +20,7 @@ export type ProvisionStudioResult = {
   studioId: string;
   locationId: string;
   ownerMembershipId: string;
+  slug: string;
 };
 
 const BUILTIN_ROLE_NAMES: Record<(typeof BUILTIN_ROLES)[number], string> = {
@@ -41,6 +44,17 @@ export async function provisionStudio(
         .insert(locations)
         .values({ studioId, name: "Main Location", timezone: input.timezone })
         .returning();
+
+      const slug = await generateUniqueSlug(input.studioName, async (candidate) => {
+        const [existing] = await tx
+          .select({ s: studioBranding.slug })
+          .from(studioBranding)
+          .where(eq(studioBranding.slug, candidate))
+          .limit(1);
+        return existing !== undefined;
+      });
+
+      await tx.insert(studioBranding).values({ studioId, slug });
 
       let ownerRoleId: string | undefined;
       for (const code of BUILTIN_ROLES) {
@@ -79,6 +93,7 @@ export async function provisionStudio(
         studioId,
         locationId: location.id,
         ownerMembershipId: ownerMembership.id,
+        slug,
       };
     },
     database
