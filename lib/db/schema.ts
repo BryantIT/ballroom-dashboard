@@ -304,6 +304,35 @@ export const studentAssignments = appSchema.table("student_assignments", {
   endedAt: timestamp("ended_at"),
 });
 
+// --- Phase 3: instructor-location assignments. Explicit, assignable data
+// (not inferred from appointments or anything else) — which locations
+// each instructor works at. Owner-only to write (locations.manage), same
+// rationale as locations/rooms themselves. Consumed by lib/scheduling's
+// calendar location filter (Task 14) via listLocationInstructors.
+export const instructorLocations = appSchema.table(
+  "instructor_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    instructorUserId: text("instructor_user_id")
+      .notNull()
+      .references(() => users.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("instructor_locations_studio_instructor_location_unique").on(
+      t.studioId,
+      t.instructorUserId,
+      t.locationId
+    ),
+  ]
+);
+
 // --- Phase 2: studio_branding — NOT tenant-owned, no RLS. Same exception
 // as `invitations` above, for a different reason: the public subdomain
 // lookup must resolve a studio from its slug BEFORE any app.tenant_id can

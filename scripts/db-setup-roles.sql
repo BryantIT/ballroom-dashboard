@@ -46,6 +46,9 @@ GRANT SELECT, INSERT ON "app"."student_relationships" TO app_runtime;
 -- service edits or deletes an existing note (same shape as
 -- student_relationships above).
 GRANT SELECT, INSERT ON "app"."notes" TO app_runtime;
+-- SELECT, INSERT only: assignments are added or left alone (ON CONFLICT DO
+-- NOTHING at the service layer), never updated or removed, in this phase.
+GRANT SELECT, INSERT ON "app"."instructor_locations" TO app_runtime;
 -- NOT RLS-protected (see lib/db/schema.ts) — the public subdomain
 -- lookup must read this before any tenant context exists. Scoping is
 -- enforced entirely in lib/branding/branding.ts.
