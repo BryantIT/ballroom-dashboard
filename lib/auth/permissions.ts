@@ -29,6 +29,10 @@ export const PERMISSION_CODES = [
   // docs/superpowers/plans/2026-11-06-phase-1-platform-studio-auth.md's
   // "Decisions this plan locks in" section.
   "locations.manage",
+  // Phase 2: studio theme/logo/subdomain-slug management. Owner-only,
+  // like locations.manage; enforced by requirePermission() in
+  // lib/branding/branding.ts (studio_branding has no RLS).
+  "branding.manage",
 ] as const;
 
 export type PermissionCode = (typeof PERMISSION_CODES)[number];
@@ -59,6 +63,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionCode, string> = {
   "users.manage": "Manage staff memberships and invitations",
   "integrations.configure": "Configure third-party integrations",
   "locations.manage": "Create and manage studio locations",
+  "branding.manage": "Manage studio theme, logo, and subdomain slug",
 };
 
 export const BUILTIN_ROLES = ["owner", "admin", "instructor"] as const;

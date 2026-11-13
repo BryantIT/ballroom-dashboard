@@ -113,6 +113,27 @@
       "when": 1794337309385,
       "tag": "0015_flat_edwin_jarvis",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1794511230534,
+      "tag": "0016_absent_ultimo",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794511242481,
+      "tag": "0017_seed_branding_manage_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794517492005,
+      "tag": "0018_backfill_branding_and_permission",
+      "breakpoints": true
     }
   ]
 }

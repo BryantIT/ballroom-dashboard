@@ -41,3 +41,7 @@ GRANT SELECT, INSERT, UPDATE ON "app"."support_sessions" TO app_runtime;
 GRANT SELECT ON "app"."platform_admins" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."students" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."student_assignments" TO app_runtime;
+-- NOT RLS-protected (see lib/db/schema.ts) — the public subdomain
+-- lookup must read this before any tenant context exists. Scoping is
+-- enforced entirely in lib/branding/branding.ts.
+GRANT SELECT, INSERT, UPDATE ON "app"."studio_branding" TO app_runtime;

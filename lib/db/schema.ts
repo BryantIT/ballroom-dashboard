@@ -259,3 +259,23 @@ export const studentAssignments = appSchema.table("student_assignments", {
   effectiveAt: timestamp("effective_at").notNull().defaultNow(),
   endedAt: timestamp("ended_at"),
 });
+
+// --- Phase 2: studio_branding — NOT tenant-owned, no RLS. Same exception
+// as `invitations` above, for a different reason: the public subdomain
+// lookup must resolve a studio from its slug BEFORE any app.tenant_id can
+// be set, so this table cannot be gated by the tenant-context RLS pattern
+// used by locations/rooms/etc. Enforcement of who may WRITE it lives
+// entirely in lib/branding/branding.ts, via an explicit
+// requirePermission(..., "branding.manage") call, not RLS.
+export const studioBranding = appSchema.table("studio_branding", {
+  studioId: uuid("studio_id")
+    .primaryKey()
+    .references(() => studios.id),
+  slug: text("slug").notNull().unique(),
+  themePreset: text("theme_preset").notNull().default("midnight"),
+  accentColorOverride: text("accent_color_override"),
+  colorMode: text("color_mode").notNull().default("system"),
+  logoUrl: text("logo_url"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
