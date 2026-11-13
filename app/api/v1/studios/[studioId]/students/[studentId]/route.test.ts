@@ -102,6 +102,17 @@ describe("PATCH /api/v1/studios/{studioId}/students/{studentId}", () => {
     expect(response.status).toBe(400);
   });
 
+  test("returns 400 for an empty body instead of throwing", async () => {
+    const { studioId, owner, student } = await createOwnerAndStudent("400-empty");
+    sessionUser.userId = owner.id;
+
+    const response = await PATCH(makeRequest(studioId, student.id, {}), {
+      params: Promise.resolve({ studioId, studentId: student.id }),
+    });
+
+    expect(response.status).toBe(400);
+  });
+
   test("returns 403 when the caller cannot edit the student", async () => {
     const { studioId, student } = await createOwnerAndStudent("403");
     const db = drizzle(pool, { schema });
