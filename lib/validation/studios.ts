@@ -54,3 +54,7 @@ export const assignInstructorLocationSchema = z.object({
   instructorUserId: z.uuid(),
   locationId: z.uuid(),
 });
+
+export const createRoomSchema = z.object({
+  name: z.string().min(1).max(200),
+});

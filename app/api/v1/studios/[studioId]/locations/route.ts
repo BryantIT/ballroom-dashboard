@@ -2,10 +2,42 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyApiSession } from "@/lib/dal";
-import { requirePermission, PermissionDeniedError } from "@/lib/auth/authorization";
+import {
+  requirePermission,
+  getActiveMembership,
+  PermissionDeniedError,
+} from "@/lib/auth/authorization";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { locations } from "@/lib/db/schema";
 import { createLocationSchema } from "@/lib/validation/studios";
+
+// No extra permission beyond an active membership — the list of locations
+// isn't sensitive, unlike creating/editing one (locations.manage).
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ studioId: string }> }
+) {
+  const { studioId } = await params;
+  if (!z.uuid().safeParse(studioId).success) {
+    return NextResponse.json({ error: "Invalid studioId" }, { status: 400 });
+  }
+  const session = await verifyApiSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { userId } = session;
+
+  const membership = await getActiveMembership(userId, studioId);
+  if (!membership) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const allLocations = await withTenantContext({ userId, tenantId: studioId }, (tx) =>
+    tx.select().from(locations)
+  );
+
+  return NextResponse.json(allLocations);
+}
 
 export async function POST(
   request: Request,
