@@ -134,9 +134,20 @@ export function getBlockLabel(
 // Permission rule: a studio_holiday (instructorUserId always null)
 // always requires appointments.manage_all. Otherwise (regular_day_off /
 // personal_time_off), the block's own instructor may manage their own
-// availability with no further permission check (self-service); anyone
-// managing a block for a *different* instructor needs
+// availability (self-service) provided they hold appointments.manage_self;
+// anyone managing a block for a *different* instructor needs
 // appointments.manage_all.
+//
+// The self-service branch MUST still call requirePermission — it is not
+// a no-op "allow it" just because instructorUserId === userId. RLS's
+// tenant_isolation WITH CHECK on studio_id only confirms the inserted
+// row's tenant column matches whatever app.tenant_id this transaction
+// happens to have set; it does NOT confirm the caller actually has a
+// membership in that studio. Without this check, any authenticated user
+// could insert a block into an arbitrary studioId just by naming
+// themselves as instructorUserId. requirePermission confirms both a
+// real active membership and the appointments.manage_self grant that
+// already governs managing one's own schedule.
 export async function createBlock(
   userId: string,
   studioId: string,
@@ -144,7 +155,9 @@ export async function createBlock(
   database?: Db
 ): Promise<Block> {
   const isSelfService = input.kind !== "studio_holiday" && input.instructorUserId === userId;
-  if (!isSelfService) {
+  if (isSelfService) {
+    await requirePermission(userId, studioId, "appointments.manage_self", database);
+  } else {
     await requirePermission(userId, studioId, "appointments.manage_all", database);
   }
 
@@ -175,16 +188,40 @@ export async function createBlock(
 
 // --- Reads --------------------------------------------------------
 
+// Timezone of one specific, known location — used when listBlocksInRange
+// is called with an explicit locationId (e.g. checking a candidate
+// appointment that already has its own locationId), which must win over
+// any instructor-location inference: an instructor who works at two
+// locations in different timezones has no single unambiguous "Monday"
+// otherwise.
+async function resolveLocationTimezone(
+  studioId: string,
+  locationId: string,
+  database?: Db
+): Promise<string> {
+  const [location] = await withTenantContext(
+    { userId: "", tenantId: studioId },
+    (tx) => tx.select({ timezone: locations.timezone }).from(locations).where(eq(locations.id, locationId)),
+    database
+  );
+  if (!location) {
+    throw new Error(`Location ${locationId} not found in studio ${studioId}`);
+  }
+  return location.timezone;
+}
+
 // Resolves which location's timezone governs a given instructor's
-// regular_day_off expansion. Prefers the instructor's own assigned
-// location(s) (lib/scheduling/instructor-locations.ts); if the instructor
-// has none assigned, falls back to the studio's only location, if it has
-// exactly one. This is a deliberate simplification for this task — once
-// a real appointment exists (Task 7/9), the appointment's own locationId
-// is used directly instead, which is unambiguous even for a studio with
-// multiple locations in different timezones. Never falls back to
-// UTC/server-local (this phase's plan doc, Global Constraints) — an
-// instructor with no resolvable location throws instead.
+// regular_day_off expansion when no explicit locationId was given.
+// Prefers the instructor's own assigned location(s)
+// (lib/scheduling/instructor-locations.ts); if the instructor has none
+// assigned, falls back to the studio's only location, if it has exactly
+// one. This is a deliberate simplification for the no-locationId case —
+// once a real appointment exists (Task 7/9) and its locationId is passed
+// in, resolveLocationTimezone above is used instead, which is
+// unambiguous even for a studio with multiple locations in different
+// timezones. Never falls back to UTC/server-local (this phase's plan
+// doc, Global Constraints) — an instructor with no resolvable location
+// throws instead.
 async function resolveInstructorTimezone(
   studioId: string,
   instructorUserId: string,
@@ -283,10 +320,21 @@ function expandRegularDayOff(
 // date inside [startAt, endAt), alongside the one-off
 // personal_time_off/studio_holiday rows as-is (included when they overlap
 // the range).
+//
+// `locationId` is optional and, when given, takes priority over the
+// instructor-location inference for every regular_day_off row resolved
+// by this call — intended for Task 8's conflict check against one
+// specific candidate appointment that already has its own locationId,
+// which is unambiguous even for an instructor assigned to multiple
+// locations in different timezones. When omitted, the existing fallback
+// (infer from the instructor's assigned location, else the studio's sole
+// location) is used exactly as before — a reasonable default for a
+// broad calendar view with no specific appointment in play.
 export async function listBlocksInRange(
   studioId: string,
   startAt: Date,
   endAt: Date,
+  locationId?: string,
   database?: Db
 ): Promise<ResolvedBlock[]> {
   const rows = await withTenantContext(
@@ -295,11 +343,18 @@ export async function listBlocksInRange(
     database
   );
 
+  // Resolved once, up front, rather than per-row: when given, every
+  // regular_day_off row in this call uses this same explicit timezone.
+  const explicitTimeZone = locationId
+    ? await resolveLocationTimezone(studioId, locationId, database)
+    : undefined;
+
   const resolved: ResolvedBlock[] = [];
 
   for (const row of rows) {
     if (row.kind === "regular_day_off") {
-      const timeZone = await resolveInstructorTimezone(studioId, row.instructorUserId!, database);
+      const timeZone =
+        explicitTimeZone ?? (await resolveInstructorTimezone(studioId, row.instructorUserId!, database));
       resolved.push(...expandRegularDayOff(row, startAt, endAt, timeZone));
     } else if (row.startAt && row.endAt && row.startAt < endAt && row.endAt > startAt) {
       resolved.push({

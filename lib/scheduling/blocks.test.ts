@@ -119,6 +119,35 @@ describe("instructor availability blocks", () => {
       ).rejects.toThrow(PermissionDeniedError);
     });
 
+    test("an authenticated user with no membership in the studio cannot self-service a block for themselves", async () => {
+      const { db, studioId } = await createOwnerAndInstructor("no-membership");
+      const [outsider] = await db
+        .insert(users)
+        .values({ email: "outsider-ib-self-service@example.com" })
+        .returning();
+
+      // outsider has no membership at all in studioId, yet names themselves
+      // as instructorUserId — this must NOT succeed just because
+      // instructorUserId === userId. RLS's tenant_isolation WITH CHECK on
+      // studio_id alone would let this insert through (it only confirms
+      // the row's studio_id matches app.tenant_id, not that outsider is
+      // actually a member of that studio), so this has to be enforced by
+      // requirePermission.
+      await expect(
+        createBlock(
+          outsider.id,
+          studioId,
+          {
+            kind: "personal_time_off",
+            instructorUserId: outsider.id,
+            startAt: new Date("2024-03-01T18:00:00Z"),
+            endAt: new Date("2024-03-01T20:00:00Z"),
+          },
+          db
+        )
+      ).rejects.toThrow(PermissionDeniedError);
+    });
+
     test("creating a studio_holiday requires appointments.manage_all even for the block's own instructor field being null", async () => {
       const { db, instructor, studioId } = await createOwnerAndInstructor("holiday");
 
@@ -229,7 +258,7 @@ describe("instructor availability blocks", () => {
       const startAt = new Date("2024-01-01T00:00:00Z");
       const endAt = new Date("2024-01-22T00:00:00Z");
 
-      const resolved = await listBlocksInRange(studioId, startAt, endAt, db);
+      const resolved = await listBlocksInRange(studioId, startAt, endAt, undefined, db);
 
       expect(resolved).toHaveLength(3);
       const localDates = resolved
@@ -276,11 +305,61 @@ describe("instructor availability blocks", () => {
       const startAt = new Date("2024-01-02T06:00:00Z");
       const endAt = new Date("2024-01-02T08:00:00Z");
 
-      const resolved = await listBlocksInRange(studioId, startAt, endAt, db);
+      const resolved = await listBlocksInRange(studioId, startAt, endAt, undefined, db);
 
       expect(resolved).toHaveLength(1);
       expect(resolved[0].startAt.toISOString()).toBe("2024-01-02T06:00:00.000Z");
       expect(resolved[0].endAt.toISOString()).toBe("2024-01-02T07:59:00.000Z");
+    });
+
+    test("an explicit locationId overrides what the instructor-location inference would otherwise have picked", async () => {
+      const { db, owner, instructor, studioId, location: locationA } = await createOwnerAndInstructor(
+        "locid-override",
+        "America/Los_Angeles"
+      );
+      // Instructor is assigned only to Location A (America/Los_Angeles).
+      await assignInstructorToLocation(owner.id, studioId, instructor.id, locationA.id, db);
+
+      // A second location, in a different timezone, that the instructor is
+      // NOT assigned to.
+      const [locationB] = await withTenantContext(
+        { userId: owner.id, tenantId: studioId },
+        (tx) =>
+          tx
+            .insert(locations)
+            .values({ studioId, name: "Location B", timezone: "America/Chicago" })
+            .returning(),
+        db
+      );
+
+      await createBlock(
+        instructor.id,
+        studioId,
+        {
+          kind: "regular_day_off",
+          instructorUserId: instructor.id,
+          dayOfWeek: 1, // Monday
+          startTime: "09:00",
+          endTime: "10:00",
+        },
+        db
+      );
+
+      const startAt = new Date("2024-01-01T00:00:00Z");
+      const endAt = new Date("2024-01-02T00:00:00Z");
+
+      // Without a locationId, inference picks Location A (America/Los_Angeles,
+      // UTC-8): Jan 1 09:00 PST = Jan 1 17:00 UTC.
+      const inferred = await listBlocksInRange(studioId, startAt, endAt, undefined, db);
+      expect(inferred).toHaveLength(1);
+      expect(inferred[0].startAt.toISOString()).toBe("2024-01-01T17:00:00.000Z");
+
+      // With Location B's id passed explicitly (America/Chicago, UTC-6),
+      // the block must follow B's timezone instead, even though the
+      // instructor is only assigned to A: Jan 1 09:00 CST = Jan 1 15:00 UTC.
+      const overridden = await listBlocksInRange(studioId, startAt, endAt, locationB.id, db);
+      expect(overridden).toHaveLength(1);
+      expect(overridden[0].startAt.toISOString()).toBe("2024-01-01T15:00:00.000Z");
     });
 
     test("includes one-off personal_time_off/studio_holiday rows as-is when they overlap the range", async () => {
@@ -312,6 +391,7 @@ describe("instructor availability blocks", () => {
         studioId,
         new Date("2024-01-01T00:00:00Z"),
         new Date("2024-12-31T00:00:00Z"),
+        undefined,
         db
       );
 
