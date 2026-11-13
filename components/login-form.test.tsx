@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
-import { describe, expect, test, vi } from "vitest";
-import { render, fireEvent } from "@testing-library/react";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { render, fireEvent, cleanup } from "@testing-library/react";
 import { LoginForm } from "./login-form";
+
+// vitest.config.mts doesn't set `test.globals: true`, so
+// @testing-library/react's own auto-cleanup never registers — see
+// app/page.test.tsx for the full explanation of why this file's 3
+// renders need it (an intermittent "window is not defined" from
+// react-dom's scheduler, not a real assertion failure).
+afterEach(cleanup);
 
 vi.mock("next-auth/react", () => ({ signIn: vi.fn() }));
 

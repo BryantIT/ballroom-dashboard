@@ -1,8 +1,15 @@
 // lib/branding/theme-root.test.tsx
 // @vitest-environment jsdom
-import { describe, expect, test } from "vitest";
-import { render } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { render, cleanup } from "@testing-library/react";
 import { ThemeRoot } from "./theme-root";
+
+// vitest.config.mts doesn't set `test.globals: true`, so
+// @testing-library/react's own auto-cleanup never registers — see
+// app/page.test.tsx for the full explanation of why this file's 3
+// renders need it (an intermittent "window is not defined" from
+// react-dom's scheduler, not a real assertion failure).
+afterEach(cleanup);
 
 describe("ThemeRoot", () => {
   test("renders a data-theme-root wrapper with the preset's CSS inlined", () => {

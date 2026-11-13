@@ -1,7 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, test } from "vitest";
-import { render } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "vitest";
+import { render, cleanup } from "@testing-library/react";
 import { BrandedSplash } from "./page";
+
+// vitest.config.mts doesn't set `test.globals: true`, so
+// @testing-library/react's own auto-cleanup never registers — each of
+// this file's 4 tests would otherwise leave its render mounted when the
+// next one starts. Left unmounted, React's scheduler can still have
+// pending work queued on these orphaned roots when jsdom's `window` is
+// torn down at the end of the run, surfacing as an intermittent
+// "ReferenceError: window is not defined" from deep inside
+// react-dom — not a real assertion failure, so it's easy to miss that
+// this file is the cause. Same pattern already applied in
+// components/branding-settings-form.test.tsx for the same reason.
+afterEach(cleanup);
 
 describe("BrandedSplash", () => {
   test("renders the studio's name and a sign-in link", () => {
