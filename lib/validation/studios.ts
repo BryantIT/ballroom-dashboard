@@ -20,6 +20,14 @@ export const acceptInvitationSchema = z.object({
   token: z.string().min(1),
 });
 
-export const updateStudentSchema = z.object({
+export const createStudentSchema = z.object({
   displayName: z.string().min(1).max(200),
+  email: z.email().optional(),
+  phone: z.string().max(40).optional(),
+});
+
+export const updateStudentSchema = z.object({
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.email().optional().nullable(),
+  phone: z.string().max(40).optional().nullable(),
 });

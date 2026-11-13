@@ -241,6 +241,11 @@ export const students = appSchema.table("students", {
     .notNull()
     .references(() => studios.id),
   displayName: text("display_name").notNull(),
+  // CRM profile fields (Phase 3). Nullable — no format constraint at the
+  // DB layer; Zod (createStudentSchema/updateStudentSchema) validates on
+  // write.
+  email: text("email"),
+  phone: text("phone"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
