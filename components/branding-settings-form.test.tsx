@@ -69,4 +69,53 @@ describe("BrandingSettingsForm", () => {
     expect(getByText(/512.?x.?512/i)).toBeTruthy();
     expect(getByText(/resized/i)).toBeTruthy();
   });
+
+  test("previews the selected preset's accent color live, before saving", () => {
+    const { getByLabelText, container } = render(
+      <BrandingSettingsForm
+        studioId="studio-1"
+        initial={{ themePreset: "midnight", accentColorOverride: null, colorMode: "system", slug: "s", logoUrl: null }}
+      />
+    );
+    // Midnight's own accent, before any selection change.
+    expect(container.querySelector("style[data-branding-preview]")?.textContent).toContain(
+      "--primary: #c9a24b"
+    );
+
+    fireEvent.click(getByLabelText(/ocean/i));
+
+    // Ocean's accent, live — no save/fetch happened.
+    expect(container.querySelector("style[data-branding-preview]")?.textContent).toContain(
+      "--primary: #2c7a8c"
+    );
+  });
+
+  test("previews a typed accent color override live", () => {
+    const { getByPlaceholderText, container } = render(
+      <BrandingSettingsForm
+        studioId="studio-1"
+        initial={{ themePreset: "midnight", accentColorOverride: null, colorMode: "system", slug: "s", logoUrl: null }}
+      />
+    );
+    fireEvent.change(getByPlaceholderText("#c9a24b"), { target: { value: "#ff00ff" } });
+    expect(container.querySelector("style[data-branding-preview]")?.textContent).toContain(
+      "--primary: #ff00ff"
+    );
+  });
+
+  test("offers a color picker bound to the same accent value as the hex input", () => {
+    const { getByLabelText, getByPlaceholderText } = render(
+      <BrandingSettingsForm
+        studioId="studio-1"
+        initial={{ themePreset: "midnight", accentColorOverride: null, colorMode: "system", slug: "s", logoUrl: null }}
+      />
+    );
+    const picker = getByLabelText(/pick accent color/i) as HTMLInputElement;
+    expect(picker.type).toBe("color");
+    // No override set yet — the picker shows the current preset's own accent.
+    expect(picker.value).toBe("#c9a24b");
+
+    fireEvent.change(picker, { target: { value: "#00ff00" } });
+    expect((getByPlaceholderText("#c9a24b") as HTMLInputElement).value).toBe("#00ff00");
+  });
 });

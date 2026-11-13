@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { THEME_PRESET_KEYS, type ThemePresetKey } from "@/lib/branding/presets";
+import { THEME_PRESET_KEYS, THEME_PRESETS, buildThemeCss, type ThemePresetKey } from "@/lib/branding/presets";
 import type { PublicBranding } from "@/lib/branding/public-branding";
 
 // Display names for the six presets. Colocated here (rather than
@@ -41,6 +41,17 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+
+  const trimmedAccentPreview = accentColorOverride.trim();
+  const isValidHexPreview = /^#[0-9a-fA-F]{6}$/.test(trimmedAccentPreview);
+  // Renders into the dashboard layout's own [data-theme-root] ancestor —
+  // CSS selectors match elements regardless of where the <style> tag
+  // lives in the tree, and this tag is later in document order than the
+  // layout's, so it wins the cascade for the same custom properties
+  // without needing !important. This is a live, unsaved preview only:
+  // nothing here is persisted until Save is pressed, and navigating away
+  // without saving leaves the stored branding untouched.
+  const previewCss = buildThemeCss(themePreset, isValidHexPreview ? trimmedAccentPreview : null);
 
   async function readErrorMessage(response: Response, fallback: string): Promise<string> {
     const body = await response.json().catch(() => null);
@@ -95,7 +106,9 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-6">
+    <>
+      <style data-branding-preview>{previewCss}</style>
+      <form onSubmit={handleSubmit} className="flex w-full max-w-lg flex-col gap-6">
       <fieldset className="flex flex-col gap-3">
         <legend className="text-sm font-medium">Theme preset</legend>
         <div className="flex flex-col gap-2">
@@ -118,12 +131,21 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="accentColorOverride">Accent color override (optional)</Label>
-        <Input
-          id="accentColorOverride"
-          placeholder="#c9a24b"
-          value={accentColorOverride}
-          onChange={(event) => setAccentColorOverride(event.target.value)}
-        />
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            aria-label="Pick accent color"
+            value={isValidHexPreview ? trimmedAccentPreview : THEME_PRESETS[themePreset].light.primary}
+            onChange={(event) => setAccentColorOverride(event.target.value)}
+            className="h-10 w-10 shrink-0 cursor-pointer rounded border border-border bg-transparent p-1"
+          />
+          <Input
+            id="accentColorOverride"
+            placeholder="#c9a24b"
+            value={accentColorOverride}
+            onChange={(event) => setAccentColorOverride(event.target.value)}
+          />
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -167,6 +189,7 @@ export function BrandingSettingsForm({ studioId, initial }: BrandingSettingsForm
       <Button type="submit" disabled={status === "saving"}>
         {status === "saving" ? "Saving..." : "Save"}
       </Button>
-    </form>
+      </form>
+    </>
   );
 }
