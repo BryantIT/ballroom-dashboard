@@ -57,12 +57,12 @@ GRANT SELECT, INSERT, UPDATE ON "app"."studio_branding" TO app_runtime;
 -- block in this phase (same append-only shape as notes/student_relationships
 -- above) — canceling/editing availability is a later-phase concern.
 GRANT SELECT, INSERT ON "app"."instructor_blocks" TO app_runtime;
--- SELECT, INSERT, UPDATE: a series is created and may later be ended by
--- setting series_end_date; it is never deleted in this phase.
-GRANT SELECT, INSERT, UPDATE ON "app"."appointment_series" TO app_runtime;
--- SELECT, INSERT, UPDATE: appointments are created and may later be
--- canceled or moved (status/time edits); rows are never deleted.
+-- SELECT, INSERT only: no planned code path updates a series row. Ending a
+-- series or changing its schedule is not in scope through Task 16.
+GRANT SELECT, INSERT ON "app"."appointment_series" TO app_runtime;
+-- SELECT, INSERT, UPDATE: appointments are created and later canceled or
+-- moved via status/time edits (Task 10); rows are never deleted.
 GRANT SELECT, INSERT, UPDATE ON "app"."appointments" TO app_runtime;
--- SELECT, INSERT, DELETE: attendees are added to and removed from an
--- appointment; they are never updated in place.
-GRANT SELECT, INSERT, DELETE ON "app"."appointment_attendees" TO app_runtime;
+-- SELECT, INSERT only: attendee rows are only ever added. Cancellation is a
+-- status transition on appointments, not a deletion of attendee rows.
+GRANT SELECT, INSERT ON "app"."appointment_attendees" TO app_runtime;
