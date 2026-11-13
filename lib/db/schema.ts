@@ -333,6 +333,43 @@ export const instructorLocations = appSchema.table(
   ]
 );
 
+// --- Phase 3: instructor availability blocks — regular weekly days off,
+// one-off personal time off, and studio-wide holidays. `kind`
+// discriminates which other columns are populated (enforced by Zod's
+// createBlockSchema discriminated union on write, not a DB CHECK — same
+// posture as every other "kind"-like text column in this file, e.g.
+// studios.status/memberships.status, which also rely on app-level
+// validation rather than a Postgres CHECK constraint):
+//   - "regular_day_off": instructorUserId + dayOfWeek/startTime/endTime
+//     set, startAt/endAt null. A weekly recurrence resolved into concrete
+//     occurrences by lib/scheduling/blocks.ts's listBlocksInRange, in the
+//     relevant location's timezone (never UTC/server-local — see this
+//     phase's plan doc Global Constraints).
+//   - "personal_time_off": instructorUserId + startAt/endAt set
+//     (absolute UTC instants, already resolved by the caller), dayOfWeek/
+//     startTime/endTime null.
+//   - "studio_holiday": instructorUserId always null (studio-wide), only
+//     startAt/endAt set.
+// `label` is free text whose visibility is viewer-gated at read time by
+// getBlockLabel (a personal_time_off/day_off's label is visible only to
+// its own instructor, or anyone with appointments.manage_all) — this
+// table has no RLS-level label redaction, same shape as notes.restricted.
+export const instructorBlocks = appSchema.table("instructor_blocks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  instructorUserId: text("instructor_user_id").references(() => users.id),
+  kind: text("kind").notNull(),
+  dayOfWeek: integer("day_of_week"),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  startAt: timestamp("start_at"),
+  endAt: timestamp("end_at"),
+  label: text("label"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // --- Phase 2: studio_branding — NOT tenant-owned, no RLS. Same exception
 // as `invitations` above, for a different reason: the public subdomain
 // lookup must resolve a studio from its slug BEFORE any app.tenant_id can

@@ -183,6 +183,20 @@
       "when": 1794598396193,
       "tag": "0025_instructor_locations_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794600139639,
+      "tag": "0026_instructor_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794600154379,
+      "tag": "0027_instructor_blocks_rls",
+      "breakpoints": true
     }
   ]
 }

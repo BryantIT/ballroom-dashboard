@@ -53,3 +53,7 @@ GRANT SELECT, INSERT ON "app"."instructor_locations" TO app_runtime;
 -- lookup must read this before any tenant context exists. Scoping is
 -- enforced entirely in lib/branding/branding.ts.
 GRANT SELECT, INSERT, UPDATE ON "app"."studio_branding" TO app_runtime;
+-- SELECT, INSERT only: no route or service edits or deletes an existing
+-- block in this phase (same append-only shape as notes/student_relationships
+-- above) — canceling/editing availability is a later-phase concern.
+GRANT SELECT, INSERT ON "app"."instructor_blocks" TO app_runtime;
