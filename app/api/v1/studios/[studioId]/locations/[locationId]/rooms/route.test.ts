@@ -3,8 +3,9 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { and, eq } from "drizzle-orm";
 import { createTestDatabase, type TestDatabase } from "@/lib/db/testing/test-database";
-import { users, locations } from "@/lib/db/schema";
+import { users, locations, roles, memberships } from "@/lib/db/schema";
 import * as schema from "@/lib/db/schema";
 
 // Only session verification is stubbed; everything below it (permission
@@ -77,6 +78,41 @@ describe("/api/v1/studios/{studioId}/locations/{locationId}/rooms", () => {
     return { db, owner, studioId, location };
   }
 
+  // Mirrors lib/scheduling/instructor-locations.test.ts's
+  // createOwnerInstructorAndLocation helper: an active membership with the
+  // Instructor role, not just "no membership at all" — this exercises
+  // requirePermission's hasPermission(..., "locations.manage") role-check
+  // path, rather than short-circuiting on getActiveMembership returning
+  // null.
+  async function addInstructorMembership(
+    db: ReturnType<typeof drizzle<typeof schema>>,
+    ownerId: string,
+    studioId: string,
+    emailSuffix: string
+  ) {
+    const [instructor] = await db
+      .insert(users)
+      .values({ email: `instructor-rooms-route-${emailSuffix}@example.com` })
+      .returning();
+    await withTenantContext(
+      { userId: ownerId, tenantId: studioId },
+      async (tx) => {
+        const [instructorRole] = await tx
+          .select()
+          .from(roles)
+          .where(and(eq(roles.studioId, studioId), eq(roles.code, "instructor")));
+        await tx.insert(memberships).values({
+          studioId,
+          userId: instructor.id,
+          roleId: instructorRole.id,
+          status: "active",
+        });
+      },
+      db
+    );
+    return instructor;
+  }
+
   describe("POST", () => {
     test("returns 401 when there is no session", async () => {
       const { studioId, location } = await createOwnerAndLocation("post-401");
@@ -107,6 +143,18 @@ describe("/api/v1/studios/{studioId}/locations/{locationId}/rooms", () => {
         .values({ email: "outsider-rooms-post@example.com" })
         .returning();
       sessionUser.userId = outsider.id;
+
+      const response = await POST(makePostRequest(studioId, location.id, { name: "Room A" }), {
+        params: Promise.resolve({ studioId, locationId: location.id }),
+      });
+
+      expect(response.status).toBe(403);
+    });
+
+    test("returns 403 when the caller is an active Instructor-role member", async () => {
+      const { db, owner, studioId, location } = await createOwnerAndLocation("post-403-instructor");
+      const instructor = await addInstructorMembership(db, owner.id, studioId, "post");
+      sessionUser.userId = instructor.id;
 
       const response = await POST(makePostRequest(studioId, location.id, { name: "Room A" }), {
         params: Promise.resolve({ studioId, locationId: location.id }),

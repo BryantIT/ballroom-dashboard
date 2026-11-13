@@ -3,8 +3,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { and, eq } from "drizzle-orm";
 import { createTestDatabase, type TestDatabase } from "../db/testing/test-database";
-import { users, locations } from "../db/schema";
+import { users, locations, roles, memberships } from "../db/schema";
 import * as schema from "../db/schema";
 
 describe("rooms", () => {
@@ -56,6 +57,42 @@ describe("rooms", () => {
     return { db, owner, studioId, location };
   }
 
+  // Mirrors lib/scheduling/instructor-locations.test.ts's
+  // createOwnerInstructorAndLocation helper: an active membership with the
+  // Instructor role, not just "no membership at all" — this exercises
+  // requirePermission's hasPermission(..., "locations.manage") role-check
+  // path, rather than short-circuiting on getActiveMembership returning
+  // null. roles/memberships are RLS-protected, so this runs inside the
+  // owner's own tenant context, same as createOwnerAndLocation above.
+  async function addInstructorMembership(
+    db: ReturnType<typeof drizzle<typeof schema>>,
+    ownerId: string,
+    studioId: string,
+    emailSuffix: string
+  ) {
+    const [instructor] = await db
+      .insert(users)
+      .values({ email: `instructor-rooms-${emailSuffix}@example.com` })
+      .returning();
+    await withTenantContext(
+      { userId: ownerId, tenantId: studioId },
+      async (tx) => {
+        const [instructorRole] = await tx
+          .select()
+          .from(roles)
+          .where(and(eq(roles.studioId, studioId), eq(roles.code, "instructor")));
+        await tx.insert(memberships).values({
+          studioId,
+          userId: instructor.id,
+          roleId: instructorRole.id,
+          status: "active",
+        });
+      },
+      db
+    );
+    return instructor;
+  }
+
   test("creates a room under a location, deriving studioId from the location", async () => {
     const { db, owner, studioId, location } = await createOwnerAndLocation("create");
 
@@ -84,6 +121,15 @@ describe("rooms", () => {
 
     await expect(
       createRoom(outsider.id, studioId, location.id, "Room A", db)
+    ).rejects.toThrow(PermissionDeniedError);
+  });
+
+  test("an active Instructor-role member cannot create a room", async () => {
+    const { db, owner, studioId, location } = await createOwnerAndLocation("perm-instructor");
+    const instructor = await addInstructorMembership(db, owner.id, studioId, "perm");
+
+    await expect(
+      createRoom(instructor.id, studioId, location.id, "Room A", db)
     ).rejects.toThrow(PermissionDeniedError);
   });
 
