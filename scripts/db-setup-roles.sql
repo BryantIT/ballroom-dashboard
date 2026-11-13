@@ -42,6 +42,10 @@ GRANT SELECT ON "app"."platform_admins" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."students" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."student_assignments" TO app_runtime;
 GRANT SELECT, INSERT ON "app"."student_relationships" TO app_runtime;
+-- SELECT, INSERT only: notes are append-only in this phase — no route or
+-- service edits or deletes an existing note (same shape as
+-- student_relationships above).
+GRANT SELECT, INSERT ON "app"."notes" TO app_runtime;
 -- NOT RLS-protected (see lib/db/schema.ts) — the public subdomain
 -- lookup must read this before any tenant context exists. Scoping is
 -- enforced entirely in lib/branding/branding.ts.

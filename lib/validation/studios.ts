@@ -44,3 +44,8 @@ export const updateStudentSchema = z
 export const linkStudentsSchema = z.object({
   studentBId: z.uuid(),
 });
+
+export const createNoteSchema = z.object({
+  body: z.string().min(1),
+  restricted: z.boolean().optional(),
+});

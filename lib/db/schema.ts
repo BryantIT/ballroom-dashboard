@@ -268,6 +268,26 @@ export const studentRelationships = appSchema.table("student_relationships", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Staff notes on a student. `restricted` notes are visible only to their
+// author and to staff holding notes.read_staff (Owner/Admin) — never to
+// other assigned instructors. See lib/students/notes.ts for the full
+// read/write authorization matrix.
+export const notes = appSchema.table("notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id),
+  authorUserId: text("author_user_id")
+    .notNull()
+    .references(() => users.id),
+  body: text("body").notNull(),
+  restricted: boolean("restricted").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const studentAssignments = appSchema.table("student_assignments", {
   id: uuid("id").primaryKey().defaultRandom(),
   studentId: uuid("student_id")
