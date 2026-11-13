@@ -370,6 +370,89 @@ export const instructorBlocks = appSchema.table("instructor_blocks", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// --- Phase 3: recurring appointment series. A weekly recurrence (dayOfWeek +
+// startTime/endTime in the location's timezone) that generates concrete
+// appointments rows. Schema only in Task 7; the generation/service logic
+// lands in later tasks. seriesEndDate null means open-ended.
+export const appointmentSeries = appSchema.table("appointment_series", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  instructorUserId: text("instructor_user_id")
+    .notNull()
+    .references(() => users.id),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  roomId: uuid("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  dayOfWeek: integer("day_of_week").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  seriesStartDate: timestamp("series_start_date").notNull(),
+  seriesEndDate: timestamp("series_end_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Phase 3: appointments. seriesId is null for one-off appointments and
+// points at the appointmentSeries row for generated occurrences.
+// status defaults to "scheduled"; like instructorBlocks.kind, its allowed
+// values are enforced by app-level validation, not a Postgres CHECK.
+// crossInstructorReasonCode/Note are populated only when an appointment is
+// booked with an instructor other than the one who would normally teach it.
+export const appointments = appSchema.table("appointments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  seriesId: uuid("series_id").references(() => appointmentSeries.id),
+  instructorUserId: text("instructor_user_id")
+    .notNull()
+    .references(() => users.id),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  roomId: uuid("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
+  status: text("status").notNull().default("scheduled"),
+  crossInstructorReasonCode: text("cross_instructor_reason_code"),
+  crossInstructorReasonNote: text("cross_instructor_reason_note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Phase 3: appointment attendees (students booked into an appointment).
+// studioId is denormalized from appointments.studioId (not derived via a
+// join) so the RLS policy below doesn't need one — same rationale as
+// rooms.studioId and rolePermissions.studioId above. Nothing enforces that
+// it matches the owning appointment's studio yet; the service layer that
+// inserts attendees (later Phase 3 task) must derive it from the appointment.
+export const appointmentAttendees = appSchema.table(
+  "appointment_attendees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => students.id),
+  },
+  (t) => [
+    uniqueIndex("appointment_attendees_appointment_student_unique").on(
+      t.appointmentId,
+      t.studentId
+    ),
+  ]
+);
+
 // --- Phase 2: studio_branding — NOT tenant-owned, no RLS. Same exception
 // as `invitations` above, for a different reason: the public subdomain
 // lookup must resolve a studio from its slug BEFORE any app.tenant_id can
