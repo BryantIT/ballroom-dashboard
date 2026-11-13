@@ -249,6 +249,25 @@ export const students = appSchema.table("students", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Linked couples (display/booking convenience only — never merges notes,
+// progress, or billing between the two students). Undirected: a pair is
+// stored once, in whichever order the caller supplied, and
+// lib/students/relationships.ts checks/queries both column orderings
+// rather than normalizing storage order.
+export const studentRelationships = appSchema.table("student_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  studentAId: uuid("student_a_id")
+    .notNull()
+    .references(() => students.id),
+  studentBId: uuid("student_b_id")
+    .notNull()
+    .references(() => students.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 export const studentAssignments = appSchema.table("student_assignments", {
   id: uuid("id").primaryKey().defaultRandom(),
   studentId: uuid("student_id")
