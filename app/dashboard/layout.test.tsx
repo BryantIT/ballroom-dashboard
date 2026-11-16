@@ -26,9 +26,21 @@ function makeBranding(overrides: Partial<PublicBranding> = {}): PublicBranding {
   };
 }
 
+function renderNav(
+  overrides: Partial<{ canManageBranding: boolean; canAccessSchedulingSettings: boolean }> = {}
+) {
+  return render(
+    <DashboardNav
+      branding={makeBranding()}
+      canManageBranding={overrides.canManageBranding ?? false}
+      canAccessSchedulingSettings={overrides.canAccessSchedulingSettings ?? false}
+    />
+  );
+}
+
 describe("DashboardNav", () => {
   test("renders the studio name", () => {
-    render(<DashboardNav branding={makeBranding()} canManageBranding={false} />);
+    renderNav();
     expect(screen.getByText("Starlight Ballroom")).not.toBeNull();
   });
 
@@ -37,6 +49,7 @@ describe("DashboardNav", () => {
       <DashboardNav
         branding={makeBranding({ logoUrl: "https://example.com/logo.png" })}
         canManageBranding={false}
+        canAccessSchedulingSettings={false}
       />
     );
     const img = screen.getByRole("img", { name: "Starlight Ballroom" });
@@ -48,26 +61,41 @@ describe("DashboardNav", () => {
 
   test("renders a generic fallback mark when logoUrl is null", () => {
     const { container } = render(
-      <DashboardNav branding={makeBranding({ logoUrl: null })} canManageBranding={false} />
+      <DashboardNav
+        branding={makeBranding({ logoUrl: null })}
+        canManageBranding={false}
+        canAccessSchedulingSettings={false}
+      />
     );
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("[data-logo-fallback]")).not.toBeNull();
   });
 
   test("shows a branding settings link when the user can manage branding", () => {
-    render(<DashboardNav branding={makeBranding()} canManageBranding={true} />);
+    renderNav({ canManageBranding: true });
     const link = screen.getByRole("link", { name: /branding settings/i });
     expect(link.getAttribute("href")).toBe("/dashboard/settings/branding");
   });
 
   test("hides the branding settings link when the user cannot manage branding", () => {
-    render(<DashboardNav branding={makeBranding()} canManageBranding={false} />);
+    renderNav({ canManageBranding: false });
     expect(screen.queryByRole("link", { name: /branding settings/i })).toBeNull();
   });
 
   test("always shows a Students link, since students.read is granted to every built-in role", () => {
-    render(<DashboardNav branding={makeBranding()} canManageBranding={false} />);
+    renderNav();
     const link = screen.getByRole("link", { name: /students/i });
     expect(link.getAttribute("href")).toBe("/dashboard/students");
+  });
+
+  test("shows a scheduling settings link when the user holds locations.manage, appointments.manage_all, or appointments.manage_self", () => {
+    renderNav({ canAccessSchedulingSettings: true });
+    const link = screen.getByRole("link", { name: /scheduling settings/i });
+    expect(link.getAttribute("href")).toBe("/dashboard/settings/scheduling");
+  });
+
+  test("hides the scheduling settings link when the user holds none of those permissions", () => {
+    renderNav({ canAccessSchedulingSettings: false });
+    expect(screen.queryByRole("link", { name: /scheduling settings/i })).toBeNull();
   });
 });
