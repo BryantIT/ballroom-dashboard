@@ -271,6 +271,45 @@ describe("instructor availability blocks", () => {
       ]);
     });
 
+    test("returns an occurrence that overlaps the query range even when the range doesn't contain the occurrence's own start", async () => {
+      const { db, owner, instructor, studioId, location } = await createOwnerAndInstructor(
+        "nested-range",
+        "America/Chicago"
+      );
+      await assignInstructorToLocation(owner.id, studioId, instructor.id, location.id, db);
+
+      // Monday 09:00-17:00 CST (America/Chicago, UTC-6 in January) =
+      // 2024-01-01T15:00:00Z - 2024-01-01T23:00:00Z.
+      await createBlock(
+        instructor.id,
+        studioId,
+        {
+          kind: "regular_day_off",
+          instructorUserId: instructor.id,
+          dayOfWeek: 1, // Monday
+          startTime: "09:00",
+          endTime: "17:00",
+        },
+        db
+      );
+
+      // Query range [12:00, 13:00) CST that same Monday — entirely nested
+      // inside the 09:00-17:00 occurrence, and not overlapping the
+      // occurrence's own start (09:00/15:00Z) at all. A filter that only
+      // checks "does the occurrence's start fall inside this range" would
+      // wrongly return zero results here; the correct check is genuine
+      // interval overlap (occurrenceStart < rangeEnd AND
+      // occurrenceEnd > rangeStart).
+      const startAt = new Date("2024-01-01T18:00:00Z");
+      const endAt = new Date("2024-01-01T19:00:00Z");
+
+      const resolved = await listBlocksInRange(studioId, startAt, endAt, undefined, db);
+
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0].startAt.toISOString()).toBe("2024-01-01T15:00:00.000Z");
+      expect(resolved[0].endAt.toISOString()).toBe("2024-01-01T23:00:00.000Z");
+    });
+
     test("resolves dayOfWeek in the location's timezone, not UTC", async () => {
       const { db, owner, instructor, studioId, location } = await createOwnerAndInstructor(
         "tz",

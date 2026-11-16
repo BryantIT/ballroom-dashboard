@@ -260,11 +260,18 @@ async function resolveInstructorTimezone(
 }
 
 // Expands a single regular_day_off row into zero or more concrete
-// occurrences whose start falls inside [rangeStart, rangeEnd). The
-// calendar-date scan itself (`cursor`) is pure UTC-anchored date
-// arithmetic — it only ever indexes a (year, month, day) triple, never a
-// real instant, so adding 24h per step has no DST ambiguity. Only the
-// final per-occurrence conversion (localDateTimeToUtc) is timezone-aware.
+// occurrences that OVERLAP [rangeStart, rangeEnd) — not merely occurrences
+// whose start falls inside it. A day-off block is at most one calendar day
+// long, so an occurrence that starts before rangeStart can still extend
+// into the queried window (e.g. a 09:00-17:00 Monday block queried against
+// [12:00, 13:00) that same Monday); the half-open overlap predicate below
+// (occurrenceStart < rangeEnd AND occurrenceEnd > rangeStart) — the same
+// one lib/scheduling/conflicts.ts's checks use — is what actually decides
+// inclusion, never a start-in-range check alone. The calendar-date scan
+// itself (`cursor`) is pure UTC-anchored date arithmetic — it only ever
+// indexes a (year, month, day) triple, never a real instant, so adding 24h
+// per step has no DST ambiguity. Only the final per-occurrence conversion
+// (localDateTimeToUtc) is timezone-aware.
 function expandRegularDayOff(
   block: Block,
   rangeStart: Date,
@@ -297,7 +304,7 @@ function expandRegularDayOff(
     if (weekday === block.dayOfWeek) {
       const occurrenceStart = localDateTimeToUtc(year, month, day, startHour, startMinute, timeZone);
       const occurrenceEnd = localDateTimeToUtc(year, month, day, endHour, endMinute, timeZone);
-      if (occurrenceStart >= rangeStart && occurrenceStart < rangeEnd) {
+      if (occurrenceStart < rangeEnd && occurrenceEnd > rangeStart) {
         occurrences.push({
           id: block.id,
           studioId: block.studioId,
@@ -317,9 +324,9 @@ function expandRegularDayOff(
 }
 
 // Expands regular_day_off rows into one concrete occurrence per matching
-// date inside [startAt, endAt), alongside the one-off
-// personal_time_off/studio_holiday rows as-is (included when they overlap
-// the range).
+// date that OVERLAPS [startAt, endAt) (see expandRegularDayOff), alongside
+// the one-off personal_time_off/studio_holiday rows as-is (also included
+// whenever they overlap the range, via the same half-open predicate).
 //
 // `locationId` is optional and, when given, takes priority over the
 // instructor-location inference for every regular_day_off row resolved

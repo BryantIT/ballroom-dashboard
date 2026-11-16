@@ -156,23 +156,17 @@ export async function checkAvailabilityBlock(
   endAt: Date,
   locationId: string
 ): Promise<void> {
-  // listBlocksInRange's regular_day_off expansion only returns occurrences
-  // whose START falls inside the queried [rangeStart, rangeEnd) — it is not
-  // itself a full overlap check. A day-off occurrence that began earlier the
-  // same local day (before our candidate's startAt) but still extends into
-  // our candidate window would be missed if we queried only
-  // [startAt, endAt). A regular_day_off occurrence never spans more than one
-  // calendar day, so widening the query's lower bound by 24h is sufficient
-  // to always capture it; the real overlap predicate below (not this query
-  // range) is what actually decides whether it conflicts.
-  const queryStart = new Date(startAt.getTime() - 24 * 60 * 60 * 1000);
-  const blocks = await listBlocksInRange(studioId, queryStart, endAt, locationId, tx);
+  // listBlocksInRange already applies genuine interval overlap to every
+  // block it resolves (lib/scheduling/blocks.ts), so the candidate
+  // appointment's own [startAt, endAt) is passed straight through — no
+  // caller-side widening needed. The filter below only narrows the result
+  // down to blocks relevant to THIS instructor: their own block, or a
+  // studio-wide studio_holiday (instructorUserId === null), which blocks
+  // everyone.
+  const blocks = await listBlocksInRange(studioId, startAt, endAt, locationId, tx);
 
   const conflicting = blocks.find(
-    (block) =>
-      (block.instructorUserId === instructorUserId || block.instructorUserId === null) &&
-      block.startAt < endAt &&
-      block.endAt > startAt
+    (block) => block.instructorUserId === instructorUserId || block.instructorUserId === null
   );
 
   if (conflicting) {
