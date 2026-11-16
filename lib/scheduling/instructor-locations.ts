@@ -3,11 +3,29 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { withTenantContext } from "../db/with-tenant-context";
-import { instructorLocations } from "../db/schema";
+import { instructorLocations, locations } from "../db/schema";
 import * as schema from "../db/schema";
-import { requirePermission } from "../auth/authorization";
+import { getActiveMembership, requirePermission } from "../auth/authorization";
 
 type Db = NodePgDatabase<typeof schema>;
+
+// Thrown when the instructor has no active membership in this studio.
+export class InstructorNotFoundError extends Error {
+  constructor(instructorUserId: string) {
+    super(`Instructor ${instructorUserId} is not an active member of this studio`);
+    this.name = "InstructorNotFoundError";
+  }
+}
+
+// Thrown when locationId doesn't resolve to a location in this studio
+// (missing, or another studio's and so invisible under RLS —
+// deliberately indistinguishable).
+export class LocationNotFoundError extends Error {
+  constructor(locationId: string) {
+    super(`No location found in this studio with id ${locationId}`);
+    this.name = "LocationNotFoundError";
+  }
+}
 
 // Explicit, assignable data — which locations each instructor works at —
 // never inferred from appointments or anything else. Owner-only
@@ -21,15 +39,34 @@ export async function assignInstructorToLocation(
 ): Promise<void> {
   await requirePermission(userId, studioId, "locations.manage", database);
 
+  // FK constraints bypass RLS, so the insert alone would accept a user with
+  // no membership here or another studio's location id.
+  const instructorMembership = await getActiveMembership(instructorUserId, studioId, database);
+  if (!instructorMembership) {
+    throw new InstructorNotFoundError(instructorUserId);
+  }
+
   await withTenantContext(
     { userId, tenantId: studioId },
-    (tx) =>
-      tx
+    async (tx) => {
+      // Runs under this studio's tenant context, so RLS hides any other
+      // studio's location.
+      const [location] = await tx
+        .select({ id: locations.id })
+        .from(locations)
+        .where(and(eq(locations.id, locationId), eq(locations.studioId, studioId)))
+        .limit(1);
+      if (!location) {
+        throw new LocationNotFoundError(locationId);
+      }
+
+      await tx
         .insert(instructorLocations)
         .values({ studioId, instructorUserId, locationId })
         // Re-assigning the same pair is a no-op, not an error — the unique
         // index on (studio_id, instructor_user_id, location_id) backs this.
-        .onConflictDoNothing(),
+        .onConflictDoNothing();
+    },
     database
   );
 }

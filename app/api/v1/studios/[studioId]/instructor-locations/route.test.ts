@@ -252,6 +252,30 @@ describe("/api/v1/studios/{studioId}/instructor-locations", () => {
       expect(response.status).toBe(201);
     });
 
+    test("returns 404 for a locationId or instructor belonging to a different studio", async () => {
+      const victim = await createOwnerInstructorAndLocation("post-404-victim");
+      const attacker = await createOwnerInstructorAndLocation("post-404-attacker");
+      sessionUser.userId = attacker.owner.id;
+
+      const crossLocation = await POST(
+        makePostRequest(attacker.studioId, {
+          instructorUserId: attacker.instructor.id,
+          locationId: victim.location.id,
+        }),
+        { params: Promise.resolve({ studioId: attacker.studioId }) }
+      );
+      expect(crossLocation.status).toBe(404);
+
+      const crossInstructor = await POST(
+        makePostRequest(attacker.studioId, {
+          instructorUserId: victim.instructor.id,
+          locationId: attacker.location.id,
+        }),
+        { params: Promise.resolve({ studioId: attacker.studioId }) }
+      );
+      expect(crossInstructor.status).toBe(404);
+    });
+
     test("assigning the same pair twice is still a success, not an error", async () => {
       const { studioId, owner, instructor, location } =
         await createOwnerInstructorAndLocation("post-dup");

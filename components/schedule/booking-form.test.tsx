@@ -1,7 +1,7 @@
 // components/schedule/booking-form.test.tsx
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { render, fireEvent, screen, cleanup } from "@testing-library/react";
+import { render, fireEvent, screen, cleanup, waitFor } from "@testing-library/react";
 import { BookingForm } from "./booking-form";
 import { localDateTimeToUtc } from "@/lib/scheduling/timezone";
 
@@ -173,6 +173,131 @@ describe("BookingForm", () => {
     // `new Date(`${date}T${startTime}:00`)` (parsed as UTC in this test
     // environment) must differ from the correct, timezone-resolved instant.
     expect(body.startAt).not.toBe(new Date("2026-06-15T10:00:00").toISOString());
+  });
+
+  function fillRecurringSeries(seriesEnd: string, dayOfWeek: string) {
+    fireEvent.click(screen.getByRole("checkbox", { name: /alex example/i }));
+    fireEvent.change(screen.getByLabelText(/^instructor$/i), { target: { value: "instr-a" } });
+    fireEvent.click(screen.getByRole("radio", { name: /recurring weekly/i }));
+    fireEvent.change(screen.getByLabelText(/day of week/i), { target: { value: dayOfWeek } });
+    fireEvent.change(screen.getByLabelText(/series start date/i), { target: { value: "2026-11-16" } });
+    fireEvent.change(screen.getByLabelText(/series end date/i), { target: { value: seriesEnd } });
+  }
+
+  // Final-review Finding 4: the server treats seriesEndDate as an EXCLUSIVE
+  // bound, so the client must send the start of the day AFTER the chosen
+  // end date, or the end date's own lesson is silently dropped.
+  test("sends the start of the NEXT local day as seriesEndDate, so a lesson on the chosen end date is included", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ seriesId: "series-1", created: [], skipped: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const aucklandLocations = [{ id: "loc-nz", name: "Auckland Studio", timezone: "Pacific/Auckland" }];
+    const aucklandRooms = [{ id: "room-nz", name: "Studio NZ", locationId: "loc-nz" }];
+    render(<BookingForm {...baseProps()} locations={aucklandLocations} rooms={aucklandRooms} />);
+
+    // 2026-12-14 is itself a Monday — the series' own dayOfWeek.
+    fillRecurringSeries("2026-12-14", "1");
+    fireEvent.click(screen.getByRole("button", { name: /book lesson/i }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/studios/studio-1/appointments/series",
+      expect.objectContaining({ method: "POST" })
+    );
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse((options as RequestInit).body as string);
+    expect(body.seriesEndDate).toBe(localDateTimeToUtc(2026, 12, 15, 0, 0, "Pacific/Auckland").toISOString());
+    expect(body.seriesEndDate).not.toBe(localDateTimeToUtc(2026, 12, 14, 0, 0, "Pacific/Auckland").toISOString());
+  });
+
+  test("rolls the exclusive series end boundary over a month/year end", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ seriesId: "series-1", created: [], skipped: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<BookingForm {...baseProps()} />);
+    // 2026-12-31 is a Thursday.
+    fillRecurringSeries("2026-12-31", "4");
+    fireEvent.click(screen.getByRole("button", { name: /book lesson/i }));
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse((options as RequestInit).body as string);
+    expect(body.seriesEndDate).toBe(new Date("2027-01-01T00:00:00.000Z").toISOString());
+  });
+
+  // Final-review Finding 5: skipped weeks must be surfaced to the user.
+  test("shows which occurrences were skipped after a recurring series is booked with conflicts", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        seriesId: "series-1",
+        created: [{ id: "a1" }, { id: "a2" }, { id: "a3" }],
+        skipped: [
+          {
+            date: "2026-11-23T10:00:00.000Z",
+            reason: "Instructor instr-a already has an overlapping appointment",
+          },
+        ],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<BookingForm {...baseProps()} />);
+    fillRecurringSeries("2026-12-14", "1");
+    fireEvent.click(screen.getByRole("button", { name: /book lesson/i }));
+
+    const warning = await screen.findByTestId("series-skip-warning");
+    const text = warning.textContent ?? "";
+    expect(text).toMatch(/booked 3 weekly lessons/i);
+    expect(text).toMatch(/1 week was skipped/i);
+    expect(text).toContain(
+      new Date("2026-11-23T10:00:00.000Z").toLocaleDateString(undefined, {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      })
+    );
+    expect(text).toContain("Instructor instr-a already has an overlapping appointment");
+    // Informational, not styled as an error.
+    expect(warning.className).not.toContain("text-destructive");
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  test("clears the skipped-occurrences message on the next submit attempt", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          seriesId: "series-1",
+          created: [],
+          skipped: [{ date: "2026-11-23T10:00:00.000Z", reason: "Room conflict" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ seriesId: "series-2", created: [{ id: "a1" }], skipped: [] }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<BookingForm {...baseProps()} />);
+    fillRecurringSeries("2026-12-14", "1");
+    fireEvent.click(screen.getByRole("button", { name: /book lesson/i }));
+    await screen.findByTestId("series-skip-warning");
+
+    // The form resets students/instructor after success; re-select them.
+    fireEvent.click(screen.getByRole("checkbox", { name: /alex example/i }));
+    fireEvent.change(screen.getByLabelText(/^instructor$/i), { target: { value: "instr-a" } });
+    fireEvent.click(screen.getByRole("button", { name: /book lesson/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByTestId("series-skip-warning")).toBeNull());
   });
 
   test("shows the server's error message when the booking request is rejected with a conflict", async () => {

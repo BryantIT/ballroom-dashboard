@@ -6,7 +6,12 @@ import { verifyApiSession } from "@/lib/dal";
 import { requirePermission, hasPermission, PermissionDeniedError } from "@/lib/auth/authorization";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { appointments } from "@/lib/db/schema";
-import { createAppointment, CrossInstructorReasonRequiredError } from "@/lib/scheduling/appointments";
+import {
+  createAppointment,
+  CrossInstructorReasonRequiredError,
+  StudentNotFoundError,
+  InstructorNotFoundError,
+} from "@/lib/scheduling/appointments";
 import {
   InstructorConflictError,
   RoomConflictError,
@@ -126,6 +131,12 @@ export async function POST(
     }
     if (err instanceof CrossInstructorReasonRequiredError) {
       return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+    // A referenced student/instructor that doesn't resolve within this
+    // studio — same 404 convention as AppointmentNotFoundError and
+    // rooms' LocationNotFoundError.
+    if (err instanceof StudentNotFoundError || err instanceof InstructorNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     if (
       err instanceof InstructorConflictError ||

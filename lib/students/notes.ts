@@ -1,16 +1,26 @@
 // lib/students/notes.ts
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { withTenantContext } from "../db/with-tenant-context";
-import { notes } from "../db/schema";
+import { notes, students } from "../db/schema";
 import * as schema from "../db/schema";
-import { hasPermission, PermissionDeniedError } from "../auth/authorization";
+import { getActiveMembership, hasPermission, PermissionDeniedError } from "../auth/authorization";
 import { isAssignedInstructor } from "./authorization";
 
 type Db = NodePgDatabase<typeof schema>;
 
 export type Note = typeof notes.$inferSelect;
+
+// Thrown by createNote when studentId doesn't resolve to a student in this
+// studio — either it doesn't exist, or it belongs to another studio and is
+// invisible under this tenant context (deliberately indistinguishable).
+export class StudentNotFoundError extends Error {
+  constructor(studentId: string) {
+    super(`No student found in this studio with id ${studentId}`);
+    this.name = "StudentNotFoundError";
+  }
+}
 
 // Read rule: Owner/Admin (notes.read_staff) see everything. Otherwise the
 // author always sees their own note. Beyond that, an assigned instructor
@@ -19,12 +29,21 @@ export type Note = typeof notes.$inferSelect;
 // other assigned instructors. isAssignedInstructor already excludes ended
 // assignments, so a former instructor falls through to `false` with no
 // extra logic needed here.
+//
+// Every branch requires an ACTIVE membership in the studio first: without
+// this up-front check, the author and assigned-instructor fallbacks below
+// (neither of which goes through hasPermission) would still let a user
+// whose membership was deactivated read notes.
 export async function canReadNote(
   context: { userId: string; studioId: string },
   note: { authorUserId: string; restricted: boolean },
   studentId: string,
   database?: Db
 ): Promise<boolean> {
+  const membership = await getActiveMembership(context.userId, context.studioId, database);
+  if (!membership) {
+    return false;
+  }
   if (await hasPermission(context.userId, context.studioId, "notes.read_staff", database)) {
     return true;
   }
@@ -72,6 +91,18 @@ export async function createNote(
   return withTenantContext(
     { userId, tenantId: studioId },
     async (tx) => {
+      // FK constraints bypass RLS, so the insert alone would accept another
+      // studio's student id. This SELECT runs under the tenant context, so
+      // RLS hides any other studio's row.
+      const [student] = await tx
+        .select({ id: students.id })
+        .from(students)
+        .where(and(eq(students.id, studentId), eq(students.studioId, studioId)))
+        .limit(1);
+      if (!student) {
+        throw new StudentNotFoundError(studentId);
+      }
+
       const [created] = await tx
         .insert(notes)
         .values({ studioId, studentId, authorUserId: userId, body, restricted })

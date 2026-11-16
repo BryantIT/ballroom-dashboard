@@ -7,6 +7,8 @@ import {
   assignInstructorToLocation,
   listInstructorLocations,
   listLocationInstructors,
+  InstructorNotFoundError,
+  LocationNotFoundError,
 } from "@/lib/scheduling/instructor-locations";
 import { assignInstructorLocationSchema } from "@/lib/validation/studios";
 
@@ -93,6 +95,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof PermissionDeniedError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (err instanceof InstructorNotFoundError || err instanceof LocationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     throw err;
   }

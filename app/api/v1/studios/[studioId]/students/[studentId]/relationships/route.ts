@@ -12,6 +12,7 @@ import {
   listRelatedStudents,
   SelfRelationshipError,
   DuplicateRelationshipError,
+  StudentNotFoundError,
 } from "@/lib/students/relationships";
 
 export async function GET(
@@ -93,6 +94,9 @@ export async function POST(
     }
     if (err instanceof DuplicateRelationshipError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err instanceof StudentNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     throw err;
   }

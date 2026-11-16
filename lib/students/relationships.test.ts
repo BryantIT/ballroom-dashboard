@@ -16,6 +16,7 @@ describe("student relationships", () => {
   let listRelatedStudents: typeof import("./relationships").listRelatedStudents;
   let SelfRelationshipError: typeof import("./relationships").SelfRelationshipError;
   let DuplicateRelationshipError: typeof import("./relationships").DuplicateRelationshipError;
+  let StudentNotFoundError: typeof import("./relationships").StudentNotFoundError;
   let PermissionDeniedError: typeof import("../auth/authorization").PermissionDeniedError;
   let withTenantContext: typeof import("../db/with-tenant-context").withTenantContext;
 
@@ -24,8 +25,13 @@ describe("student relationships", () => {
     process.env.DATABASE_RUNTIME_URL = testDb.runtimeConnectionUri;
     pool = new Pool({ connectionString: testDb.runtimeConnectionUri });
     ({ provisionStudio } = await import("../studios/provision"));
-    ({ linkStudents, listRelatedStudents, SelfRelationshipError, DuplicateRelationshipError } =
-      await import("./relationships"));
+    ({
+      linkStudents,
+      listRelatedStudents,
+      SelfRelationshipError,
+      DuplicateRelationshipError,
+      StudentNotFoundError,
+    } = await import("./relationships"));
     ({ withTenantContext } = await import("../db/with-tenant-context"));
     ({ PermissionDeniedError } = await import("../auth/authorization"));
   }, 60_000);
@@ -88,6 +94,26 @@ describe("student relationships", () => {
     await expect(
       linkStudents(owner.id, studioId, studentB.id, studentA.id, db)
     ).rejects.toThrow(DuplicateRelationshipError);
+  });
+
+  // Final-review Finding 7.2: FK constraints bypass RLS, so linkStudents
+  // must verify both students belong to the caller's own studio.
+  test("rejects linking to a student that belongs to a different studio (either side)", async () => {
+    const victim = await createOwnerAndStudents("xt-victim");
+    const attacker = await createOwnerAndStudents("xt-attacker");
+
+    await expect(
+      linkStudents(attacker.owner.id, attacker.studioId, attacker.studentA.id, victim.studentA.id, attacker.db)
+    ).rejects.toThrow(StudentNotFoundError);
+    await expect(
+      linkStudents(attacker.owner.id, attacker.studioId, victim.studentA.id, attacker.studentA.id, attacker.db)
+    ).rejects.toThrow(StudentNotFoundError);
+    await expect(
+      linkStudents(attacker.owner.id, attacker.studioId, victim.studentA.id, victim.studentB.id, attacker.db)
+    ).rejects.toThrow(StudentNotFoundError);
+
+    expect(await listRelatedStudents(attacker.studioId, attacker.studentA.id, attacker.db)).toEqual([]);
+    expect(await listRelatedStudents(victim.studioId, victim.studentA.id, victim.db)).toEqual([]);
   });
 
   test("a non-Owner/Admin cannot link students", async () => {

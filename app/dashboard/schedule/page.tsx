@@ -18,7 +18,12 @@ import { getInstructorLoad } from "@/lib/scheduling/instructor-load";
 import { listBlocksInRange, getBlockLabel, localDateTimeToUtc, getLocalDateInTimezone } from "@/lib/scheduling/blocks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { DayView, type DayViewAppointment, type DayViewBlock } from "@/components/schedule/day-view";
+import {
+  DayView,
+  buildInstructorColumns,
+  type DayViewAppointment,
+  type DayViewBlock,
+} from "@/components/schedule/day-view";
 import { BookingForm } from "@/components/schedule/booking-form";
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -135,20 +140,17 @@ export default async function SchedulePage(props: PageProps<"/dashboard/schedule
   const dateParamValue = `${year}-${pad2(month)}-${pad2(day)}`;
 
   // Every bookable instructor in the studio, with their current
-  // active-student load — getInstructorLoad (Task 11). Filtered down to
-  // the selected location's assigned instructors (listLocationInstructors,
-  // Task 4) for the day view's columns; passed through unfiltered to
-  // BookingForm, since any instructor can be booked for any student
-  // regardless of location assignment (this phase's plan doc, Global
-  // Constraints).
+  // active-student load — getInstructorLoad (Task 11) — and the selected
+  // location's assigned instructors (listLocationInstructors, Task 4).
+  // The day view's columns are computed further down, once the
+  // appointments/blocks are known (buildInstructorColumns); instructorLoad
+  // is passed through unfiltered to BookingForm, since any instructor can
+  // be booked for any student regardless of location assignment (this
+  // phase's plan doc, Global Constraints).
   const [locationInstructorIds, instructorLoad] = await Promise.all([
     listLocationInstructors(studioId, selectedLocationId),
     getInstructorLoad(studioId),
   ]);
-  const locationInstructorIdSet = new Set(locationInstructorIds);
-  const instructorColumns = instructorLoad
-    .filter((instructor) => locationInstructorIdSet.has(instructor.instructorUserId))
-    .map((instructor) => ({ instructorUserId: instructor.instructorUserId, name: instructor.name }));
 
   // Duplicates the query shape in app/api/v1/studios/[studioId]/appointments/
   // route.ts's GET handler (that route itself duplicates locations/route.ts's
@@ -228,6 +230,17 @@ export default async function SchedulePage(props: PageProps<"/dashboard/schedule
     startAt: block.startAt,
     endAt: block.endAt,
   }));
+
+  // Union of location-assigned instructors and anyone with an appointment
+  // or (non-holiday) block in this view — location assignment is
+  // informational only, so an appointment for an unassigned instructor
+  // must still get a column rather than silently vanishing.
+  const instructorColumns = buildInstructorColumns(
+    locationInstructorIds,
+    instructorLoad,
+    dayViewAppointments,
+    dayViewBlocks
+  );
 
   let bookingSection: ReactNode = null;
   if (canBook) {
@@ -346,7 +359,12 @@ export default async function SchedulePage(props: PageProps<"/dashboard/schedule
             <Button type="submit">View</Button>
           </form>
 
-          <DayView instructors={instructorColumns} appointments={dayViewAppointments} blocks={dayViewBlocks} />
+          <DayView
+            instructors={instructorColumns}
+            appointments={dayViewAppointments}
+            blocks={dayViewBlocks}
+            timeZone={selectedLocation.timezone}
+          />
         </CardContent>
       </Card>
 

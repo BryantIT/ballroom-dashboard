@@ -1,11 +1,18 @@
 // lib/scheduling/appointments.ts
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { withTenantContext, type Tx } from "../db/with-tenant-context";
-import { appointments, appointmentAttendees, appointmentSeries, studentAssignments, locations } from "../db/schema";
+import {
+  appointments,
+  appointmentAttendees,
+  appointmentSeries,
+  studentAssignments,
+  locations,
+  students,
+} from "../db/schema";
 import * as schema from "../db/schema";
-import { hasPermission, requirePermission } from "../auth/authorization";
+import { getActiveMembership, hasPermission, requirePermission } from "../auth/authorization";
 import {
   checkInstructorConflict,
   checkRoomConflict,
@@ -46,6 +53,27 @@ export class CrossInstructorReasonRequiredError extends Error {
         `instructor being booked (${bookedInstructorUserId}) — a crossInstructorReason is required`
     );
     this.name = "CrossInstructorReasonRequiredError";
+  }
+}
+
+// Thrown when an attendee student id doesn't resolve to a student row in
+// this studio (it doesn't exist, or belongs to a different studio and is
+// invisible under this transaction's tenant context — deliberately the
+// same error either way). FK constraints alone would accept another
+// studio's student id, since FK checks bypass RLS.
+export class StudentNotFoundError extends Error {
+  constructor(studentIds: string[]) {
+    super(`No student found in this studio with id(s) ${studentIds.join(", ")}`);
+    this.name = "StudentNotFoundError";
+  }
+}
+
+// Thrown when the instructor being booked has no active membership in
+// this studio (not a member at all, or a deactivated membership).
+export class InstructorNotFoundError extends Error {
+  constructor(instructorUserId: string) {
+    super(`Instructor ${instructorUserId} is not an active member of this studio`);
+    this.name = "InstructorNotFoundError";
   }
 }
 
@@ -100,10 +128,55 @@ async function bookAppointmentCore(
     crossInstructorReason?: { code: string; note?: string };
   }
 ): Promise<Appointment> {
+  // Serialize concurrent bookings that share an instructor or a room. The
+  // conflict checks below are plain SELECTs followed by an INSERT under
+  // READ COMMITTED, so without these locks two overlapping bookings could
+  // both pass their checks before either commits. pg_advisory_xact_lock
+  // blocks (never fails) until any other holder's transaction ends, and is
+  // released automatically at this transaction's commit/rollback; once
+  // acquired, the checks below re-read committed data and see the winner.
+  //
+  // DEADLOCK INVARIANT: always take the instructor lock first, then the
+  // room lock — this exact order, unconditionally, on every call. Never
+  // sort or reorder these.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('instructor:' || ${input.instructorUserId})::bigint)`);
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext('room:' || ${input.roomId})::bigint)`);
+
   await checkInstructorConflict(tx, studioId, input.instructorUserId, input.startAt, input.endAt);
   await checkRoomConflict(tx, studioId, input.roomId, input.startAt, input.endAt);
   await checkRoomLocationMatch(tx, input.roomId, input.locationId);
   await checkAvailabilityBlock(tx, studioId, input.instructorUserId, input.startAt, input.endAt, input.locationId);
+
+  // Tenant-scoped existence checks for caller-supplied ids (FK constraints
+  // bypass RLS, so they'd happily accept another studio's row). The
+  // students SELECT runs under this tx's tenant context, so RLS hides any
+  // other studio's student. roomId/locationId are already covered by
+  // checkRoomLocationMatch above (an invisible room fails closed, and a
+  // visible room's own locationId is necessarily this studio's).
+  const requestedStudentIds = [...new Set(input.attendeeStudentIds)];
+  const foundStudents =
+    requestedStudentIds.length > 0
+      ? await tx
+          .select({ id: students.id })
+          .from(students)
+          .where(and(eq(students.studioId, studioId), inArray(students.id, requestedStudentIds)))
+      : [];
+  const foundStudentIds = new Set(foundStudents.map((row) => row.id));
+  const missingStudentIds = requestedStudentIds.filter((id) => !foundStudentIds.has(id));
+  if (missingStudentIds.length > 0) {
+    throw new StudentNotFoundError(missingStudentIds);
+  }
+
+  // Passing `tx` keeps this lookup on the same connection/transaction
+  // (same pattern as checkAvailabilityBlock -> listBlocksInRange(..., tx))
+  // rather than checking out a second pooled connection while holding the
+  // advisory locks. It runs as a savepoint that re-sets app.user_id/
+  // app.tenant_id; only the memberships policy reads app.user_id, and the
+  // tenant id is unchanged, so the writes below are unaffected.
+  const instructorMembership = await getActiveMembership(input.instructorUserId, studioId, tx);
+  if (!instructorMembership) {
+    throw new InstructorNotFoundError(input.instructorUserId);
+  }
 
   if (!input.crossInstructorReason) {
     for (const studentId of input.attendeeStudentIds) {

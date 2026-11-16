@@ -2,8 +2,9 @@
 //
 // Pure presentational component: everything it renders has already been
 // resolved server-side (app/dashboard/schedule/page.tsx) — instructor
-// columns already filtered to the selected location
-// (listLocationInstructors), appointment attendee/room names already
+// columns already computed via buildInstructorColumns below (location-
+// assigned instructors plus anyone with activity in the view), appointment
+// attendee/room names already
 // joined, and block labels already redacted per-viewer via
 // lib/scheduling/blocks.ts's getBlockLabel. This component never applies
 // its own visibility rule on top of that; a null `label` here always
@@ -39,11 +40,53 @@ type DayViewProps = {
   instructors: DayViewInstructor[];
   appointments: DayViewAppointment[];
   blocks: DayViewBlock[];
+  // IANA timezone of the location being viewed — every displayed time is
+  // rendered in it, never the server's/browser's own local zone.
+  timeZone: string;
 };
 
-function formatRange(startAt: Date, endAt: Date): string {
+// The day view's instructor columns: the UNION of instructors explicitly
+// assigned to the viewed location AND every instructor who actually has
+// an appointment or a (non-holiday) block in the view. Location assignment
+// is informational only — any instructor can be booked at any location —
+// so filtering columns to assigned instructors alone would silently hide
+// real appointments. Display names come from `roster` (getInstructorLoad's
+// studio-wide bookable-instructor list), in its order; an instructor with
+// an appointment but no roster entry (e.g. since-deactivated) still gets a
+// column, appended at the end with a null name.
+export function buildInstructorColumns(
+  locationInstructorIds: Iterable<string>,
+  roster: { instructorUserId: string; name: string | null }[],
+  appointments: { instructorUserId: string }[],
+  blocks: { instructorUserId: string | null; kind: DayViewBlockKind }[]
+): DayViewInstructor[] {
+  const activityIds = new Set<string>(appointments.map((appointment) => appointment.instructorUserId));
+  for (const block of blocks) {
+    if (block.kind !== "studio_holiday" && block.instructorUserId !== null) {
+      activityIds.add(block.instructorUserId);
+    }
+  }
+  const wanted = new Set<string>([...locationInstructorIds, ...activityIds]);
+
+  const columns: DayViewInstructor[] = roster
+    .filter((instructor) => wanted.has(instructor.instructorUserId))
+    .map((instructor) => ({ instructorUserId: instructor.instructorUserId, name: instructor.name }));
+
+  // Activity from someone not on the roster still gets a column. (A
+  // location-assigned id with no roster entry AND no activity is dropped,
+  // exactly as before.)
+  const rosterIds = new Set(roster.map((instructor) => instructor.instructorUserId));
+  for (const instructorUserId of activityIds) {
+    if (!rosterIds.has(instructorUserId)) {
+      columns.push({ instructorUserId, name: null });
+    }
+  }
+  return columns;
+}
+
+function formatRange(startAt: Date, endAt: Date, timeZone: string): string {
   const fmt = (date: Date) =>
-    date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone });
   return `${fmt(startAt)} - ${fmt(endAt)}`;
 }
 
@@ -51,7 +94,7 @@ function byStartAt<T extends { startAt: Date }>(items: T[]): T[] {
   return [...items].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
 }
 
-export function DayView({ instructors, appointments, blocks }: DayViewProps) {
+export function DayView({ instructors, appointments, blocks, timeZone }: DayViewProps) {
   const holidayBlocks = byStartAt(blocks.filter((block) => block.kind === "studio_holiday"));
 
   return (
@@ -65,6 +108,13 @@ export function DayView({ instructors, appointments, blocks }: DayViewProps) {
           {holiday.label ?? "Studio holiday"}
         </div>
       ))}
+
+      {instructors.length === 0 ? (
+        <p data-testid="day-view-empty" className="text-sm text-muted-foreground">
+          No instructors assigned to this location yet — assign one in Scheduling settings, or book an
+          appointment to see it here.
+        </p>
+      ) : null}
 
       <div
         className="grid gap-3"
@@ -113,7 +163,7 @@ export function DayView({ instructors, appointments, blocks }: DayViewProps) {
                     >
                       <p className="font-medium">{appointment.studentNames.join(", ")}</p>
                       <p>{appointment.roomName}</p>
-                      <p className="opacity-80">{formatRange(appointment.startAt, appointment.endAt)}</p>
+                      <p className="opacity-80">{formatRange(appointment.startAt, appointment.endAt, timeZone)}</p>
                     </div>
                   );
                 }

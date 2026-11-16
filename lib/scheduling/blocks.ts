@@ -5,7 +5,7 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { withTenantContext } from "../db/with-tenant-context";
 import { instructorBlocks, locations } from "../db/schema";
 import * as schema from "../db/schema";
-import { requirePermission } from "../auth/authorization";
+import { getActiveMembership, requirePermission } from "../auth/authorization";
 import { listInstructorLocations } from "./instructor-locations";
 import { localDateTimeToUtc, getLocalDateInTimezone } from "./timezone";
 import type { CreateBlockInput } from "../validation/scheduling";
@@ -31,6 +31,15 @@ export class MissingLocationTimezoneError extends Error {
         "them to a location (instructor_locations) or ensure the studio has exactly one location"
     );
     this.name = "MissingLocationTimezoneError";
+  }
+}
+
+// Thrown by createBlock when a regular_day_off/personal_time_off block's
+// instructor has no active membership in this studio.
+export class InstructorNotFoundError extends Error {
+  constructor(instructorUserId: string) {
+    super(`Instructor ${instructorUserId} is not an active member of this studio`);
+    this.name = "InstructorNotFoundError";
   }
 }
 
@@ -98,6 +107,16 @@ export async function createBlock(
     await requirePermission(userId, studioId, "appointments.manage_self", database);
   } else {
     await requirePermission(userId, studioId, "appointments.manage_all", database);
+  }
+
+  // FK constraints bypass RLS, so the insert alone would accept any user id
+  // as the block's instructor — require an active membership in this
+  // studio. (studio_holiday carries no instructor.)
+  if (input.kind !== "studio_holiday") {
+    const instructorMembership = await getActiveMembership(input.instructorUserId, studioId, database);
+    if (!instructorMembership) {
+      throw new InstructorNotFoundError(input.instructorUserId);
+    }
   }
 
   const isRegularDayOff = input.kind === "regular_day_off";

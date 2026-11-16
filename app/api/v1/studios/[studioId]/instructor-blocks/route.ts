@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyApiSession } from "@/lib/dal";
 import { requirePermission, hasPermission, PermissionDeniedError } from "@/lib/auth/authorization";
-import { createBlock, getBlockLabel, listBlocksInRange } from "@/lib/scheduling/blocks";
+import { createBlock, getBlockLabel, listBlocksInRange, InstructorNotFoundError } from "@/lib/scheduling/blocks";
 import { createBlockSchema } from "@/lib/validation/scheduling";
 
 const rangeQuerySchema = z.object({
@@ -91,6 +91,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof PermissionDeniedError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (err instanceof InstructorNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     throw err;
   }

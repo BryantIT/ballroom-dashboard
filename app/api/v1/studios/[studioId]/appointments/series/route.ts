@@ -6,6 +6,8 @@ import { PermissionDeniedError } from "@/lib/auth/authorization";
 import {
   createAppointmentSeries,
   CrossInstructorReasonRequiredError,
+  StudentNotFoundError,
+  InstructorNotFoundError,
 } from "@/lib/scheduling/appointments";
 import {
   InstructorConflictError,
@@ -49,6 +51,11 @@ export async function POST(
     }
     if (err instanceof CrossInstructorReasonRequiredError) {
       return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+    // Not a per-occurrence conflict, so it propagates out of
+    // createAppointmentSeries rather than being recorded in `skipped`.
+    if (err instanceof StudentNotFoundError || err instanceof InstructorNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     if (
       err instanceof InstructorConflictError ||

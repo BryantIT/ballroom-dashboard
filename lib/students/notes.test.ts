@@ -5,7 +5,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { and, eq } from "drizzle-orm";
 import { createTestDatabase, type TestDatabase } from "../db/testing/test-database";
-import { users, students, studentAssignments, roles, memberships } from "../db/schema";
+import { users, students, studentAssignments, roles, memberships, notes } from "../db/schema";
 import * as schema from "../db/schema";
 
 describe("student notes authorization", () => {
@@ -16,6 +16,7 @@ describe("student notes authorization", () => {
   let canWriteNote: typeof import("./notes").canWriteNote;
   let createNote: typeof import("./notes").createNote;
   let listVisibleNotes: typeof import("./notes").listVisibleNotes;
+  let StudentNotFoundError: typeof import("./notes").StudentNotFoundError;
   let PermissionDeniedError: typeof import("../auth/authorization").PermissionDeniedError;
   let withTenantContext: typeof import("../db/with-tenant-context").withTenantContext;
 
@@ -24,7 +25,9 @@ describe("student notes authorization", () => {
     process.env.DATABASE_RUNTIME_URL = testDb.runtimeConnectionUri;
     pool = new Pool({ connectionString: testDb.runtimeConnectionUri });
     ({ provisionStudio } = await import("../studios/provision"));
-    ({ canReadNote, canWriteNote, createNote, listVisibleNotes } = await import("./notes"));
+    ({ canReadNote, canWriteNote, createNote, listVisibleNotes, StudentNotFoundError } = await import(
+      "./notes"
+    ));
     ({ withTenantContext } = await import("../db/with-tenant-context"));
     ({ PermissionDeniedError } = await import("../auth/authorization"));
   }, 60_000);
@@ -261,6 +264,83 @@ describe("student notes authorization", () => {
     await expect(
       createNote(instructor.id, studioId, student.id, "Nope", false, db)
     ).rejects.toThrow(PermissionDeniedError);
+  });
+
+  // Final-review Finding 6: the author and assigned-instructor fallbacks
+  // must also require an ACTIVE membership.
+  async function deactivateMembership(
+    db: ReturnType<typeof drizzle<typeof schema>>,
+    ownerId: string,
+    studioId: string,
+    userId: string
+  ) {
+    await withTenantContext(
+      { userId: ownerId, tenantId: studioId },
+      (tx) =>
+        tx
+          .update(memberships)
+          .set({ status: "disabled" })
+          .where(and(eq(memberships.studioId, studioId), eq(memberships.userId, userId))),
+      db
+    );
+  }
+
+  test("an author whose membership is no longer active cannot read their own note (restricted or not)", async () => {
+    const { db, owner, studioId, student } = await setupStudio("inactive-author");
+    const author = await addInstructor(db, owner.id, studioId, "inactive-author");
+    await assignInstructor(db, owner.id, studioId, student.id, author.id);
+
+    const restricted = await createNote(author.id, studioId, student.id, "Restricted", true, db);
+    const open = await createNote(author.id, studioId, student.id, "Open", false, db);
+
+    // Sanity: readable while active.
+    expect(await canReadNote({ userId: author.id, studioId }, restricted, student.id, db)).toBe(true);
+
+    await deactivateMembership(db, owner.id, studioId, author.id);
+
+    expect(await canReadNote({ userId: author.id, studioId }, restricted, student.id, db)).toBe(false);
+    expect(await canReadNote({ userId: author.id, studioId }, open, student.id, db)).toBe(false);
+  });
+
+  test("an assigned instructor whose membership is no longer active cannot read a non-restricted note", async () => {
+    const { db, owner, studioId, student } = await setupStudio("inactive-assigned");
+    const author = await addInstructor(db, owner.id, studioId, "inactive-assigned-author");
+    const assigned = await addInstructor(db, owner.id, studioId, "inactive-assigned-reader");
+    await assignInstructor(db, owner.id, studioId, student.id, author.id);
+    await assignInstructor(db, owner.id, studioId, student.id, assigned.id, { isPrimary: false });
+
+    const note = await createNote(author.id, studioId, student.id, "Visible note", false, db);
+    expect(await canReadNote({ userId: assigned.id, studioId }, note, student.id, db)).toBe(true);
+
+    // Assignment row is left un-ended on purpose — only the membership changes.
+    await deactivateMembership(db, owner.id, studioId, assigned.id);
+
+    expect(await canReadNote({ userId: assigned.id, studioId }, note, student.id, db)).toBe(false);
+  });
+
+  // Final-review Finding 7.1: FK constraints bypass RLS, so createNote must
+  // verify the student belongs to the caller's own studio.
+  test("createNote rejects a studentId that belongs to a different studio", async () => {
+    const victim = await setupStudio("xt-victim");
+    const attacker = await setupStudio("xt-attacker");
+
+    await expect(
+      createNote(attacker.owner.id, attacker.studioId, victim.student.id, "Cross-tenant", false, attacker.db)
+    ).rejects.toThrow(StudentNotFoundError);
+
+    // No note row was written for the victim's student anywhere.
+    const victimNotes = await withTenantContext(
+      { userId: victim.owner.id, tenantId: victim.studioId },
+      (tx) => tx.select().from(notes).where(eq(notes.studentId, victim.student.id)),
+      victim.db
+    );
+    expect(victimNotes).toHaveLength(0);
+    const attackerNotes = await withTenantContext(
+      { userId: attacker.owner.id, tenantId: attacker.studioId },
+      (tx) => tx.select().from(notes).where(eq(notes.studentId, victim.student.id)),
+      attacker.db
+    );
+    expect(attackerNotes).toHaveLength(0);
   });
 
   test("listVisibleNotes never returns a note the viewer can't see", async () => {

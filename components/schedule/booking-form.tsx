@@ -79,6 +79,14 @@ function todayDateString(): string {
   return `${year}-${month}-${day}`;
 }
 
+// The subset of POST .../appointments/series's response body this form
+// reads (lib/scheduling/appointments.ts's CreateAppointmentSeriesResult,
+// JSON-serialized — dates arrive as ISO strings).
+type SeriesResponse = {
+  created?: unknown[];
+  skipped?: { date: string; reason: string }[];
+};
+
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   const body = await response.json().catch(() => null);
   if (body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string") {
@@ -121,6 +129,11 @@ export function BookingForm({
 
   const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Set after a recurring series is booked with some weeks skipped due to
+  // conflicts; each `skipped` entry is a ready-to-display "date — reason".
+  const [seriesSkipWarning, setSeriesSkipWarning] = useState<{ bookedCount: number; skipped: string[] } | null>(
+    null
+  );
 
   const selectedStudents = useMemo(
     () => students.filter((student) => selectedStudentIds.includes(student.id)),
@@ -189,6 +202,7 @@ export function BookingForm({
 
     setStatus("saving");
     setError(null);
+    setSeriesSkipWarning(null);
 
     const crossInstructorReason =
       needsCrossInstructorReason && crossInstructorReasonCode !== ""
@@ -237,7 +251,9 @@ export function BookingForm({
         let seriesEndAt: Date | undefined;
         if (seriesEndDate) {
           const [endYear, endMonth, endDay] = seriesEndDate.split("-").map(Number);
-          seriesEndAt = localDateTimeToUtc(endYear, endMonth, endDay, 0, 0, locationTimeZone);
+          // windowEnd is EXCLUSIVE server-side, so send the start of the day
+          // AFTER the chosen end date — otherwise that date's own lesson is dropped.
+          seriesEndAt = localDateTimeToUtc(endYear, endMonth, endDay + 1, 0, 0, locationTimeZone);
         }
         response = await fetch(`/api/v1/studios/${studioId}/appointments/series`, {
           method: "POST",
@@ -259,6 +275,29 @@ export function BookingForm({
         // defensively anyway per this task's brief), and 409 conflicts —
         // all three just carry a message to surface verbatim.
         throw new Error(await readErrorMessage(response, "Failed to book appointment"));
+      }
+
+      if (mode === "recurring") {
+        // createAppointmentSeries books every non-conflicting week and
+        // reports the rest in `skipped` — surface those, or the staff
+        // member never learns some weeks weren't booked.
+        const result = (await response.json().catch(() => null)) as SeriesResponse | null;
+        const skipped = result?.skipped ?? [];
+        if (skipped.length > 0) {
+          setSeriesSkipWarning({
+            bookedCount: result?.created?.length ?? 0,
+            skipped: skipped.map(
+              (entry) =>
+                `${new Date(entry.date).toLocaleDateString(undefined, {
+                  weekday: "short",
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  timeZone: locationTimeZone,
+                })} — ${entry.reason}`
+            ),
+          });
+        }
       }
 
       setStatus("idle");
@@ -491,6 +530,27 @@ export function BookingForm({
       )}
 
       {status === "error" && error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      {seriesSkipWarning ? (
+        <div
+          role="status"
+          data-testid="series-skip-warning"
+          className="flex flex-col gap-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+        >
+          <p>
+            Booked {seriesSkipWarning.bookedCount} weekly{" "}
+            {seriesSkipWarning.bookedCount === 1 ? "lesson" : "lessons"}.{" "}
+            {seriesSkipWarning.skipped.length}{" "}
+            {seriesSkipWarning.skipped.length === 1 ? "week was" : "weeks were"} skipped because of a scheduling
+            conflict:
+          </p>
+          <ul className="list-disc pl-5">
+            {seriesSkipWarning.skipped.map((entry) => (
+              <li key={entry}>{entry}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <Button type="submit" disabled={!canSubmit}>
         {status === "saving" ? "Booking..." : "Book lesson"}

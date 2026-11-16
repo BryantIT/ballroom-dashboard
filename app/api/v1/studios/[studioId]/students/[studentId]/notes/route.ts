@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { verifyApiSession } from "@/lib/dal";
 import { PermissionDeniedError } from "@/lib/auth/authorization";
-import { createNote, listVisibleNotes } from "@/lib/students/notes";
+import { createNote, listVisibleNotes, StudentNotFoundError } from "@/lib/students/notes";
 import { createNoteSchema } from "@/lib/validation/studios";
 
 export async function GET(
@@ -65,6 +65,9 @@ export async function POST(
   } catch (err) {
     if (err instanceof PermissionDeniedError) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (err instanceof StudentNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 });
     }
     throw err;
   }

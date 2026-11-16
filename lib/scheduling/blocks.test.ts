@@ -15,6 +15,7 @@ describe("instructor availability blocks", () => {
   let createBlock: typeof import("./blocks").createBlock;
   let getBlockLabel: typeof import("./blocks").getBlockLabel;
   let listBlocksInRange: typeof import("./blocks").listBlocksInRange;
+  let InstructorNotFoundError: typeof import("./blocks").InstructorNotFoundError;
   let createBlockSchema: typeof import("../validation/scheduling").createBlockSchema;
   let assignInstructorToLocation: typeof import("./instructor-locations").assignInstructorToLocation;
   let PermissionDeniedError: typeof import("../auth/authorization").PermissionDeniedError;
@@ -25,7 +26,7 @@ describe("instructor availability blocks", () => {
     process.env.DATABASE_RUNTIME_URL = testDb.runtimeConnectionUri;
     pool = new Pool({ connectionString: testDb.runtimeConnectionUri });
     ({ provisionStudio } = await import("../studios/provision"));
-    ({ createBlock, getBlockLabel, listBlocksInRange } = await import("./blocks"));
+    ({ createBlock, getBlockLabel, listBlocksInRange, InstructorNotFoundError } = await import("./blocks"));
     ({ createBlockSchema } = await import("../validation/scheduling"));
     ({ assignInstructorToLocation } = await import("./instructor-locations"));
     ({ withTenantContext } = await import("../db/with-tenant-context"));
@@ -146,6 +147,64 @@ describe("instructor availability blocks", () => {
           db
         )
       ).rejects.toThrow(PermissionDeniedError);
+    });
+
+    // Final-review Finding 7.5: FK constraints bypass RLS, so a block's
+    // instructor must be verified as an active member of this studio.
+    test("an Owner cannot create a personal_time_off block for an instructor who is a member of a different studio", async () => {
+      const victim = await createOwnerAndInstructor("xt-victim");
+      const attacker = await createOwnerAndInstructor("xt-attacker");
+
+      await expect(
+        createBlock(
+          attacker.owner.id,
+          attacker.studioId,
+          {
+            kind: "personal_time_off",
+            instructorUserId: victim.instructor.id,
+            startAt: new Date("2024-03-01T18:00:00Z"),
+            endAt: new Date("2024-03-01T20:00:00Z"),
+          },
+          attacker.db
+        )
+      ).rejects.toThrow(InstructorNotFoundError);
+    });
+
+    test("an Owner cannot create a regular_day_off block for an instructor whose membership is not active", async () => {
+      const { db, owner, instructor, studioId } = await createOwnerAndInstructor("disabled-instructor");
+      await withTenantContext(
+        { userId: owner.id, tenantId: studioId },
+        (tx) =>
+          tx
+            .update(memberships)
+            .set({ status: "disabled" })
+            .where(and(eq(memberships.studioId, studioId), eq(memberships.userId, instructor.id))),
+        db
+      );
+
+      await expect(
+        createBlock(
+          owner.id,
+          studioId,
+          {
+            kind: "regular_day_off",
+            instructorUserId: instructor.id,
+            dayOfWeek: 1,
+            startTime: "09:00",
+            endTime: "17:00",
+          },
+          db
+        )
+      ).rejects.toThrow(InstructorNotFoundError);
+
+      const rows = await listBlocksInRange(
+        studioId,
+        new Date("2024-03-01T00:00:00Z"),
+        new Date("2024-03-15T00:00:00Z"),
+        undefined,
+        db
+      );
+      expect(rows).toHaveLength(0);
     });
 
     test("creating a studio_holiday requires appointments.manage_all even for the block's own instructor field being null", async () => {

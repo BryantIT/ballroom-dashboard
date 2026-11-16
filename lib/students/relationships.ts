@@ -1,9 +1,9 @@
 // lib/students/relationships.ts
 import "server-only";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { withTenantContext } from "../db/with-tenant-context";
-import { studentRelationships } from "../db/schema";
+import { studentRelationships, students } from "../db/schema";
 import * as schema from "../db/schema";
 import { requirePermission } from "../auth/authorization";
 
@@ -20,6 +20,16 @@ export class DuplicateRelationshipError extends Error {
   constructor(studentAId: string, studentBId: string) {
     super(`Students ${studentAId} and ${studentBId} are already linked`);
     this.name = "DuplicateRelationshipError";
+  }
+}
+
+// Thrown when either side of the pair doesn't resolve to a student in this
+// studio (missing, or another studio's and so invisible under RLS —
+// deliberately indistinguishable).
+export class StudentNotFoundError extends Error {
+  constructor(studentId: string) {
+    super(`No student found in this studio with id ${studentId}`);
+    this.name = "StudentNotFoundError";
   }
 }
 
@@ -45,6 +55,20 @@ export async function linkStudents(
   return withTenantContext(
     { userId, tenantId: studioId },
     async (tx) => {
+      // Both students must exist in THIS studio. FK constraints bypass RLS
+      // and would accept another studio's student id; this SELECT runs
+      // under the tenant context, so RLS hides any other studio's row.
+      const found = await tx
+        .select({ id: students.id })
+        .from(students)
+        .where(and(eq(students.studioId, studioId), inArray(students.id, [studentAId, studentBId])));
+      const foundIds = new Set(found.map((row) => row.id));
+      for (const id of [studentAId, studentBId]) {
+        if (!foundIds.has(id)) {
+          throw new StudentNotFoundError(id);
+        }
+      }
+
       // Check-then-insert: undirected pairs are stored once in whichever
       // order the caller supplied, so both orderings must be checked. Same
       // low-concurrency admin-action TOCTOU category already accepted for
