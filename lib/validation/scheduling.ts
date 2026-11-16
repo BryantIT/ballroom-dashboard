@@ -112,3 +112,17 @@ export const createAppointmentSeriesSchema = z
   });
 
 export type CreateAppointmentSeriesInput = z.infer<typeof createAppointmentSeriesSchema>;
+
+// --- Phase 3: appointment status transitions (Task 10) ---------------
+//
+// "scheduled" is deliberately excluded as a valid request body value —
+// it's only ever an appointment's initial status (set by
+// createAppointment/createAppointmentSeries), never a transition target.
+// Matches AppointmentTransitionTarget in lib/scheduling/appointment-status.ts.
+export const transitionAppointmentStatusSchema = z
+  .object({
+    status: z.enum(["checked_in", "completed", "canceled", "late_canceled", "no_show"]),
+  })
+  .strict();
+
+export type TransitionAppointmentStatusInput = z.infer<typeof transitionAppointmentStatusSchema>;
