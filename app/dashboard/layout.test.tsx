@@ -64,4 +64,10 @@ describe("DashboardNav", () => {
     render(<DashboardNav branding={makeBranding()} canManageBranding={false} />);
     expect(screen.queryByRole("link", { name: /branding settings/i })).toBeNull();
   });
+
+  test("always shows a Students link, since students.read is granted to every built-in role", () => {
+    render(<DashboardNav branding={makeBranding()} canManageBranding={false} />);
+    const link = screen.getByRole("link", { name: /students/i });
+    expect(link.getAttribute("href")).toBe("/dashboard/students");
+  });
 });

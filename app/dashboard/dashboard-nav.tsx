@@ -40,6 +40,15 @@ export function DashboardNav({
         <span className="text-sm font-semibold">{branding.studioName}</span>
       </div>
       <div className="flex items-center gap-2">
+        {/* students.read is granted to all three built-in roles, so
+            unlike the branding link below, this one needs no permission
+            gate — every user who reaches the dashboard can see it. */}
+        <Link
+          href="/dashboard/students"
+          className="text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          Students
+        </Link>
         {canManageBranding ? (
           <Link
             href="/dashboard/settings/branding"
