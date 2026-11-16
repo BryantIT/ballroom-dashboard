@@ -6,6 +6,7 @@ import { PermissionDeniedError } from "@/lib/auth/authorization";
 import {
   transitionAppointmentStatus,
   IllegalStatusTransitionError,
+  AppointmentNotFoundError,
 } from "@/lib/scheduling/appointment-status";
 import { transitionAppointmentStatusSchema } from "@/lib/validation/scheduling";
 
@@ -49,10 +50,7 @@ export async function PATCH(
     if (err instanceof IllegalStatusTransitionError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
-    // transitionAppointmentStatus throws a plain Error (no dedicated
-    // class) when appointmentId doesn't resolve to a row in this studio —
-    // map that to 404 rather than letting it fall through as a 500.
-    if (err instanceof Error && /not found/i.test(err.message)) {
+    if (err instanceof AppointmentNotFoundError) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     throw err;

@@ -29,6 +29,13 @@ export class IllegalStatusTransitionError extends Error {
   }
 }
 
+export class AppointmentNotFoundError extends Error {
+  constructor(appointmentId: string, studioId: string) {
+    super(`Appointment ${appointmentId} not found in studio ${studioId}`);
+    this.name = "AppointmentNotFoundError";
+  }
+}
+
 // Legal transition map, per BR-04 (references/ballroom_dash_spec_v0_3.md):
 // "scheduled -> checked_in -> completed (check-in optional); alternative
 // terminal outcomes canceled, late_canceled, no_show." Read literally:
@@ -91,7 +98,7 @@ export async function transitionAppointmentStatus(
   );
 
   if (!appointment) {
-    throw new Error(`Appointment ${appointmentId} not found in studio ${studioId}`);
+    throw new AppointmentNotFoundError(appointmentId, studioId);
   }
 
   await requireAppointmentPermission(userId, studioId, appointment.instructorUserId, database);
