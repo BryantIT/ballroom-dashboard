@@ -56,7 +56,12 @@ export class CrossInstructorReasonRequiredError extends Error {
 // requirePermission rather than treating instructorUserId === userId as an
 // automatic pass, for the same reason documented there (RLS only confirms
 // the tenant column, not that the caller holds a real grant).
-async function requireAppointmentPermission(
+//
+// Exported so lib/scheduling/appointment-status.ts's
+// transitionAppointmentStatus (Task 10) can reuse this exact check against
+// the target appointment's own instructorUserId, rather than reimplementing
+// the manage_all/manage_self split a second time.
+export async function requireAppointmentPermission(
   userId: string,
   studioId: string,
   instructorUserId: string,
