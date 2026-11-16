@@ -35,10 +35,14 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const updates = Object.fromEntries(
+    Object.entries(body.data).filter(([, v]) => v !== undefined)
+  );
+
   const [updated] = await withTenantContext({ userId, tenantId: studioId }, (tx) =>
     tx
       .update(students)
-      .set({ displayName: body.data.displayName })
+      .set(updates)
       .where(eq(students.id, studentId))
       .returning()
   );

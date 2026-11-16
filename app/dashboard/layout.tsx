@@ -46,11 +46,28 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   const branding = await getBrandingByStudioId(membership.studioId);
   const canManageBranding = await hasPermission(userId, membership.studioId, "branding.manage");
+  // Mirrors app/dashboard/settings/scheduling/page.tsx's own section
+  // gating: that page always shows at least a self-service
+  // personal-time-off section to anyone holding either appointments
+  // permission (manage_all also permits creating a block for yourself),
+  // so the nav link should appear under the same condition rather than
+  // being Owner-only like the branding link above.
+  const [canManageLocations, canManageAppointmentsAll, canManageAppointmentsSelf] = await Promise.all([
+    hasPermission(userId, membership.studioId, "locations.manage"),
+    hasPermission(userId, membership.studioId, "appointments.manage_all"),
+    hasPermission(userId, membership.studioId, "appointments.manage_self"),
+  ]);
+  const canAccessSchedulingSettings =
+    canManageLocations || canManageAppointmentsAll || canManageAppointmentsSelf;
 
   return (
     <ThemeRoot preset={branding.themePreset} accentOverride={branding.accentColorOverride}>
       <div className="flex min-h-full flex-1 flex-col">
-        <DashboardNav branding={branding} canManageBranding={canManageBranding} />
+        <DashboardNav
+          branding={branding}
+          canManageBranding={canManageBranding}
+          canAccessSchedulingSettings={canAccessSchedulingSettings}
+        />
         <main className="flex flex-1 flex-col p-8">{children}</main>
       </div>
     </ThemeRoot>
