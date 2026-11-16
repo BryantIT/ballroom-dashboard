@@ -5,6 +5,7 @@ import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { instructorLocations, locations, memberships } from "@/lib/db/schema";
 import { hasPermission } from "@/lib/auth/authorization";
 import { getInstructorLoad } from "@/lib/scheduling/instructor-load";
+import { resolveInstructorTimezone, MissingLocationTimezoneError } from "@/lib/scheduling/blocks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InstructorLocationSettings } from "@/components/instructor-location-settings";
 import { AvailabilityBlockForm } from "@/components/availability-block-form";
@@ -59,11 +60,18 @@ export default async function SchedulingSettingsPage() {
   // - appointments.manage_self: managing the viewer's OWN blocks
   //   (createBlock's self-service branch).
   //
-  // appointments.manage_all also lets its holder create a block for
-  // THEMSELVES (createBlock treats instructorUserId === callerUserId as
-  // self-service regardless of which permission check actually passes),
-  // so the availability section is shown to anyone holding either
-  // appointments permission, not just appointments.manage_self.
+  // appointments.manage_all lets its holder manage any OTHER instructor's
+  // blocks and create studio-wide holidays, but createBlock still treats
+  // self-targeting (instructorUserId === callerUserId, for any kind but
+  // studio_holiday) as requiring appointments.manage_self specifically —
+  // manage_all alone does NOT cover it (the built-in Admin role holds
+  // manage_all but not manage_self; only Owner holds both). The
+  // availability section is still shown to anyone holding either
+  // appointments permission (manage_all can always manage others'
+  // blocks/holidays even with no self-service rights of their own), but
+  // AvailabilityBlockForm's instructor picker (canManageSelf prop) must
+  // exclude the viewer as a selectable target when they lack
+  // manage_self, since that path would otherwise 403 server-side.
   const [canManageLocations, canManageAll, canManageSelf] = await Promise.all([
     hasPermission(userId, studioId, "locations.manage"),
     hasPermission(userId, studioId, "appointments.manage_all"),
@@ -138,6 +146,35 @@ export default async function SchedulingSettingsPage() {
 
   let blockSection = null;
   if (canManageOwnBlocks) {
+    // Resolved once here (a Server Component, so this is safe — unlike
+    // AvailabilityBlockForm, a Client Component, which must never import
+    // lib/scheduling/blocks.ts's server-only + DB-connecting chain) so
+    // the personal_time_off path can build startAt/endAt in the TARGET
+    // instructor's own effective timezone instead of the browser's
+    // local offset. An instructor with no resolvable location (no
+    // assignment and either zero or more than one studio location) maps
+    // to null rather than crashing the whole page — the form surfaces
+    // that as a blocking inline error only if that instructor is
+    // actually selected for a personal_time_off block, never silently
+    // falling back to UTC/local (this phase's Global Constraints).
+    const instructorTimezones: Record<string, string | null> = {};
+    await Promise.all(
+      instructorOptions.map(async (instructor) => {
+        try {
+          instructorTimezones[instructor.instructorUserId] = await resolveInstructorTimezone(
+            studioId,
+            instructor.instructorUserId
+          );
+        } catch (error) {
+          if (error instanceof MissingLocationTimezoneError) {
+            instructorTimezones[instructor.instructorUserId] = null;
+            return;
+          }
+          throw error;
+        }
+      })
+    );
+
     blockSection = (
       <Card>
         <CardHeader>
@@ -148,7 +185,9 @@ export default async function SchedulingSettingsPage() {
             studioId={studioId}
             currentUserId={userId}
             instructors={instructorOptions}
+            instructorTimezones={instructorTimezones}
             canManageAll={canManageAll}
+            canManageSelf={canManageSelf}
           />
         </CardContent>
       </Card>

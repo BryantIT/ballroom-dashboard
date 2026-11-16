@@ -161,7 +161,7 @@ async function resolveLocationTimezone(
 // timezones. Never falls back to UTC/server-local (this phase's plan
 // doc, Global Constraints) — an instructor with no resolvable location
 // throws instead.
-async function resolveInstructorTimezone(
+export async function resolveInstructorTimezone(
   studioId: string,
   instructorUserId: string,
   database?: Db

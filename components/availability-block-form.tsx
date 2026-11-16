@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { localDateTimeToUtc } from "@/lib/scheduling/timezone";
 
 export type AvailabilityBlockFormInstructor = {
   instructorUserId: string;
@@ -25,11 +26,30 @@ type AvailabilityBlockFormProps = {
   // by the target-instructor picker, which only renders when
   // canManageAll.
   instructors: AvailabilityBlockFormInstructor[];
+  // Each instructor's effective timezone (resolveInstructorTimezone,
+  // resolved server-side in page.tsx — this component must never import
+  // lib/scheduling/blocks.ts directly, which would drag its server-only +
+  // DB-connecting import chain into the client bundle), keyed by
+  // instructorUserId. null means that instructor has no resolvable
+  // location (no assignment, and the studio doesn't have exactly one
+  // location to fall back to) — used to block personal_time_off
+  // submission for that instructor rather than silently falling back to
+  // the browser's local offset.
+  instructorTimezones: Record<string, string | null>;
   // appointments.manage_all: lets its holder create a block for ANY
-  // instructor (including themselves) or a studio-wide holiday. Absent
-  // this, the form is pure self-service: no target-instructor picker, no
-  // studio_holiday kind option.
+  // OTHER instructor or a studio-wide holiday. Absent this, the form is
+  // pure self-service: no target-instructor picker, no studio_holiday
+  // kind option.
   canManageAll: boolean;
+  // appointments.manage_self: required specifically for self-targeting
+  // (instructorUserId === callerUserId) on any kind but studio_holiday —
+  // lib/scheduling/blocks.ts's createBlock enforces this independently
+  // of manage_all (the built-in Admin role holds manage_all but not
+  // manage_self; only Owner holds both). When canManageAll is true but
+  // this is false, the instructor picker excludes the viewer as a
+  // selectable target — that's the one path the server would actually
+  // reject with a bare 403.
+  canManageSelf: boolean;
 };
 
 type BlockKind = "regular_day_off" | "personal_time_off" | "studio_holiday";
@@ -44,6 +64,27 @@ const DAY_OF_WEEK_OPTIONS = [
   { value: 6, label: "Saturday" },
 ];
 
+function parseDateTimeLocal(value: string): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+} {
+  // <input type="datetime-local"> always produces "YYYY-MM-DDTHH:MM"
+  // (seconds omitted since this form never sets a `step`) — the same
+  // split-on-delimiter parsing components/schedule/booking-form.tsx uses
+  // for its separate date/time fields, applied to the combined string.
+  const [datePart, timePart] = value.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = timePart.split(":").map(Number);
+  return { year, month, day, hour, minute };
+}
+
+const MISSING_TIMEZONE_ERROR =
+  "This instructor has no assigned location to resolve a timezone from — assign one on the Instructor " +
+  "locations panel first.";
+
 async function readErrorMessage(response: Response, fallback: string): Promise<string> {
   const body = await response.json().catch(() => null);
   if (body && typeof body === "object" && typeof (body as { error?: unknown }).error === "string") {
@@ -56,12 +97,33 @@ export function AvailabilityBlockForm({
   studioId,
   currentUserId,
   instructors,
+  instructorTimezones,
   canManageAll,
+  canManageSelf,
 }: AvailabilityBlockFormProps) {
   const router = useRouter();
 
+  // An Admin-shaped viewer (manage_all but not manage_self) cannot target
+  // themselves — lib/scheduling/blocks.ts's createBlock requires
+  // manage_self specifically for self-targeting. Exclude the viewer from
+  // the selectable list and default to the first other instructor
+  // instead, so the one path the server would reject is never offered.
+  // Both the pure self-service case (!canManageAll) and the full-access
+  // case (canManageAll && canManageSelf, e.g. Owner) are unaffected —
+  // each still defaults to/only offers the viewer as before.
+  const excludeSelfFromPicker = canManageAll && !canManageSelf;
+  const pickerInstructors = excludeSelfFromPicker
+    ? instructors.filter((instructor) => instructor.instructorUserId !== currentUserId)
+    : instructors;
+
   const [kind, setKind] = useState<BlockKind>("regular_day_off");
-  const [targetInstructorUserId, setTargetInstructorUserId] = useState(currentUserId);
+  const [targetInstructorUserId, setTargetInstructorUserId] = useState(() => {
+    if (excludeSelfFromPicker) {
+      const firstOther = pickerInstructors[0];
+      return firstOther ? firstOther.instructorUserId : currentUserId;
+    }
+    return currentUserId;
+  });
   const [dayOfWeek, setDayOfWeek] = useState(1);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
@@ -78,8 +140,16 @@ export function AvailabilityBlockForm({
   // boundary.
   const instructorUserId = canManageAll ? targetInstructorUserId : currentUserId;
 
+  // The target instructor's effective timezone (null when unresolvable).
+  // Only meaningful for personal_time_off, which is always anchored to
+  // one specific instructor; studio_holiday has no instructorUserId and
+  // is handled separately (untouched by this lookup).
+  const targetInstructorTimezone = instructorTimezones[instructorUserId] ?? null;
+  const personalTimeOffBlockedByTimezone = kind === "personal_time_off" && targetInstructorTimezone === null;
+
   const canSubmit =
     status !== "saving" &&
+    !personalTimeOffBlockedByTimezone &&
     (kind === "regular_day_off"
       ? startTime !== "" && endTime !== "" && startTime < endTime
       : startAt !== "" && endAt !== "");
@@ -100,39 +170,53 @@ export function AvailabilityBlockForm({
     const trimmedLabel = label.trim();
     const labelField = trimmedLabel ? { label: trimmedLabel } : {};
 
-    const body =
-      kind === "regular_day_off"
-        ? {
-            kind,
-            instructorUserId,
-            dayOfWeek,
-            startTime,
-            endTime,
-            ...labelField,
-          }
-        : kind === "personal_time_off"
-          ? {
-              kind,
-              instructorUserId,
-              // startAt/endAt come from <input type="datetime-local">
-              // fields with no timezone of their own — `new Date(...)`
-              // parses that string in the browser's own local timezone.
-              // That's the right interpretation here: unlike appointment
-              // booking (always anchored to one specific location's
-              // timezone, this phase's plan doc's Global Constraints), a
-              // personal day off or studio holiday has no single location
-              // to anchor it to, so "the time the person filling this in
-              // sees on their own clock" is the only timezone available.
-              startAt: new Date(startAt),
-              endAt: new Date(endAt),
-              ...labelField,
-            }
-          : {
-              kind,
-              startAt: new Date(startAt),
-              endAt: new Date(endAt),
-              ...labelField,
-            };
+    let body: Record<string, unknown>;
+    if (kind === "regular_day_off") {
+      body = {
+        kind,
+        instructorUserId,
+        dayOfWeek,
+        startTime,
+        endTime,
+        ...labelField,
+      };
+    } else if (kind === "personal_time_off") {
+      // Unlike studio_holiday (genuinely studio-wide, no single
+      // instructor to anchor to — "the time the person filling this in
+      // sees on their own clock" is defensible there), personal_time_off
+      // always has a specific instructorUserId, and this phase's Global
+      // Constraints require resolving a real timezone for any instant
+      // like this rather than trusting the browser's local offset.
+      // targetInstructorTimezone (instructorTimezones, resolved
+      // server-side via resolveInstructorTimezone) is that instructor's
+      // effective timezone; canSubmit already blocks submission when
+      // it's unresolvable, so this re-check is defense in depth, not the
+      // real guard.
+      if (!targetInstructorTimezone) {
+        setStatus("error");
+        setError(MISSING_TIMEZONE_ERROR);
+        return;
+      }
+      const start = parseDateTimeLocal(startAt);
+      const end = parseDateTimeLocal(endAt);
+      body = {
+        kind,
+        instructorUserId,
+        startAt: localDateTimeToUtc(start.year, start.month, start.day, start.hour, start.minute, targetInstructorTimezone),
+        endAt: localDateTimeToUtc(end.year, end.month, end.day, end.hour, end.minute, targetInstructorTimezone),
+        ...labelField,
+      };
+    } else {
+      // studio_holiday: genuinely studio-wide, no single location to
+      // anchor it to (reviewer-confirmed defensible as-is) — left
+      // untouched.
+      body = {
+        kind,
+        startAt: new Date(startAt),
+        endAt: new Date(endAt),
+        ...labelField,
+      };
+    }
 
     try {
       const response = await fetch(`/api/v1/studios/${studioId}/instructor-blocks`, {
@@ -180,7 +264,7 @@ export function AvailabilityBlockForm({
             onChange={(event) => setTargetInstructorUserId(event.target.value)}
             className="flex h-10 w-full rounded-lg border border-border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            {instructors.map((instructor) => (
+            {pickerInstructors.map((instructor) => (
               <option key={instructor.instructorUserId} value={instructor.instructorUserId}>
                 {instructor.instructorUserId === currentUserId
                   ? `${instructor.name ?? "Me"} (me)`
@@ -189,6 +273,10 @@ export function AvailabilityBlockForm({
             ))}
           </select>
         </div>
+      ) : null}
+
+      {personalTimeOffBlockedByTimezone ? (
+        <p className="text-sm text-destructive">{MISSING_TIMEZONE_ERROR}</p>
       ) : null}
 
       {kind === "regular_day_off" ? (
