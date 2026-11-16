@@ -95,4 +95,35 @@ describe("StudentForm", () => {
       );
     });
   });
+
+  test("sends an explicit null when an existing email is blanked out on edit, so it's actually cleared", async () => {
+    // updateStudentSchema/the PATCH route only clear a field on an
+    // explicit `null` — omitting the key (like the create path does for
+    // a blank optional field) leaves the stored value untouched.
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ id: "s1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { getByLabelText, getByRole } = render(
+      <StudentForm
+        studioId="studio-1"
+        student={{ id: "s1", displayName: "Alex Example", email: "alex@example.com", phone: "555-0100" }}
+      />
+    );
+
+    fireEvent.change(getByLabelText(/email/i), { target: { value: "" } });
+    fireEvent.click(getByRole("button", { name: /save/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/studios/studio-1/students/s1",
+        expect.objectContaining({ method: "PATCH" })
+      );
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    expect(JSON.parse((options as RequestInit).body as string)).toEqual({
+      displayName: "Alex Example",
+      email: null,
+      phone: "555-0100",
+    });
+  });
 });

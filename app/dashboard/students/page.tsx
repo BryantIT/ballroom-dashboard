@@ -42,11 +42,26 @@ export default async function StudentsPage() {
 
   const studioId = membership.studioId;
 
-  // students.read is granted to all three built-in roles (dashboard-nav's
-  // "Students" link assumes this too), so there's no "you don't have
-  // access to this page" branch here the way the branding page has for
-  // branding.manage — but whether the add-student form renders is still
-  // resolved server-side, not assumed.
+  // students.read is granted to all three built-in roles today (and
+  // dashboard-nav's "Students" link assumes that too), but roles/
+  // rolePermissions are DB-driven — a future custom role could omit it.
+  // Resolve it server-side like every API route does, rather than
+  // relying on tenant RLS alone to decide what this page renders.
+  const canReadStudents = await hasPermission(userId, studioId, "students.read");
+
+  if (!canReadStudents) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Students</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          You don&apos;t have access to this page.
+        </CardContent>
+      </Card>
+    );
+  }
+
   const canCreateStudent = await hasPermission(userId, studioId, "students.create");
 
   const rows = await withTenantContext({ userId, tenantId: studioId }, (tx) =>

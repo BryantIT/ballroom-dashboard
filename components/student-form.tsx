@@ -48,14 +48,27 @@ export function StudentForm({ studioId, student }: StudentFormProps) {
         ? `/api/v1/studios/${studioId}/students/${student.id}`
         : `/api/v1/studios/${studioId}/students`;
       const method = student ? "PATCH" : "POST";
+      // On edit, a blanked field must be sent as an explicit `null` so
+      // updateStudentSchema (and the route's `.set()`) actually clears
+      // the stored value — omitting the key, like the create path does,
+      // would leave it untouched instead. There's nothing to clear on a
+      // brand-new student (createStudentSchema doesn't accept `null`),
+      // so the create path keeps omitting blank optional fields.
+      const body = student
+        ? {
+            displayName: displayName.trim(),
+            email: trimmedEmail === "" ? null : trimmedEmail,
+            phone: trimmedPhone === "" ? null : trimmedPhone,
+          }
+        : {
+            displayName: displayName.trim(),
+            ...(trimmedEmail ? { email: trimmedEmail } : {}),
+            ...(trimmedPhone ? { phone: trimmedPhone } : {}),
+          };
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          displayName: displayName.trim(),
-          ...(trimmedEmail ? { email: trimmedEmail } : {}),
-          ...(trimmedPhone ? { phone: trimmedPhone } : {}),
-        }),
+        body: JSON.stringify(body),
       });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, "Failed to save student"));

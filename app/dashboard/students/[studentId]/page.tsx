@@ -6,6 +6,7 @@ import Link from "next/link";
 import { verifySession } from "@/lib/dal";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
 import { memberships, students, studentAssignments, users } from "@/lib/db/schema";
+import { hasPermission } from "@/lib/auth/authorization";
 import { canEditStudent } from "@/lib/students/authorization";
 import { canWriteNote, listVisibleNotes } from "@/lib/students/notes";
 import { listRelatedStudents } from "@/lib/students/relationships";
@@ -50,6 +51,26 @@ export default async function StudentDetailPage({
   }
 
   const studioId = membership.studioId;
+
+  // students.read is granted to all three built-in roles today, but
+  // roles/rolePermissions are DB-driven — a future custom role could
+  // omit it. Resolve it server-side, same as every API route does,
+  // rather than relying on tenant RLS alone to decide what this page
+  // renders.
+  const canReadStudents = await hasPermission(userId, studioId, "students.read");
+
+  if (!canReadStudents) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Student</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          You don&apos;t have access to this page.
+        </CardContent>
+      </Card>
+    );
+  }
 
   const [student] = await withTenantContext({ userId, tenantId: studioId }, (tx) =>
     tx.select().from(students).where(eq(students.id, studentId)).limit(1)
