@@ -7,6 +7,7 @@ import { instructorBlocks, locations } from "../db/schema";
 import * as schema from "../db/schema";
 import { requirePermission } from "../auth/authorization";
 import { listInstructorLocations } from "./instructor-locations";
+import { localDateTimeToUtc, getLocalDateInTimezone } from "./timezone";
 import type { CreateBlockInput } from "../validation/scheduling";
 
 type Db = NodePgDatabase<typeof schema>;
@@ -35,82 +36,15 @@ export class MissingLocationTimezoneError extends Error {
 
 // --- Timezone-correctness helpers ------------------------------------
 //
-// Node has no built-in "construct a Date from local wall-clock parts in
-// an arbitrary IANA zone" API, so these use the guess-and-correct
-// two-pass approach from this phase's plan doc (Global Constraints):
-// guess the instant as if the local time were UTC, read back what that
-// guess actually displays in the target zone via Intl, and shift by the
-// difference. One iteration is sufficient except exactly at a DST
-// transition boundary (not exercised by this task's tests).
-
-function formatPartsInZone(
-  date: Date,
-  timeZone: string
-): { year: number; month: number; day: number; hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(date);
-
-  const get = (type: string): number => {
-    const part = parts.find((p) => p.type === type);
-    if (!part) {
-      throw new Error(`Intl.DateTimeFormat did not produce a "${type}" part`);
-    }
-    return Number(part.value);
-  };
-
-  return {
-    year: get("year"),
-    month: get("month"),
-    day: get("day"),
-    hour: get("hour"),
-    minute: get("minute"),
-  };
-}
-
-// Converts a specific local wall-clock date+time in `timeZone` into the
-// correct UTC instant.
-export function localDateTimeToUtc(
-  year: number,
-  month: number,
-  day: number,
-  hour: number,
-  minute: number,
-  timeZone: string
-): Date {
-  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const displayed = formatPartsInZone(guess, timeZone);
-  const displayedAsUtcMs = Date.UTC(
-    displayed.year,
-    displayed.month - 1,
-    displayed.day,
-    displayed.hour,
-    displayed.minute
-  );
-  const intendedAsUtcMs = Date.UTC(year, month - 1, day, hour, minute);
-  const diffMs = displayedAsUtcMs - intendedAsUtcMs;
-  return new Date(guess.getTime() - diffMs);
-}
-
-// The local calendar date (year/month/day) `date` falls on in `timeZone`.
-// Exported for reuse by lib/scheduling/appointments.ts's weekly series
-// generation (Task 9), which needs the same "which local calendar date
-// does this instant fall on" primitive that expandRegularDayOff below
-// already relies on — see this phase's plan doc Global Constraints on
-// timezone handling.
-export function getLocalDateInTimezone(
-  date: Date,
-  timeZone: string
-): { year: number; month: number; day: number } {
-  const { year, month, day } = formatPartsInZone(date, timeZone);
-  return { year, month, day };
-}
+// Moved to lib/scheduling/timezone.ts (a pure module with no "server-only"
+// guard and no lib/db/* import) so components/schedule/booking-form.tsx (a
+// Client Component) can import localDateTimeToUtc without dragging this
+// file's withTenantContext -> lib/db/client.ts chain — a Node Postgres
+// client plus a module that throws as soon as it runs in the browser —
+// into the client bundle. Re-exported here unchanged so every existing
+// server-side caller keeps importing from "./blocks"/"@/lib/scheduling/
+// blocks" exactly as before.
+export { localDateTimeToUtc, getLocalDateInTimezone };
 
 function parseHHMM(value: string): [number, number] {
   const [hour, minute] = value.split(":").map(Number);

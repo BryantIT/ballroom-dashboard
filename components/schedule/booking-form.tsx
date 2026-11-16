@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { InstructorLoadPicker, type InstructorLoadOption } from "./instructor-load-picker";
+// Imported from lib/scheduling/timezone.ts, NOT lib/scheduling/blocks.ts —
+// blocks.ts is "server-only" and pulls in a Node Postgres client via
+// withTenantContext, which would crash this Client Component as soon as
+// it ran in the browser. timezone.ts is the pure subset of that same
+// helper with no such dependency; blocks.ts re-exports it unchanged for
+// every server-side caller (e.g. app/dashboard/schedule/page.tsx).
+import { localDateTimeToUtc } from "@/lib/scheduling/timezone";
 
 export type BookingFormStudent = {
   id: string;
@@ -26,7 +33,7 @@ export type BookingFormInstructor = {
   name: string | null;
 };
 
-export type BookingFormLocation = { id: string; name: string };
+export type BookingFormLocation = { id: string; name: string; timezone: string };
 export type BookingFormRoom = { id: string; name: string; locationId: string };
 
 type CrossInstructorReasonCode = "buddy_lesson" | "instructor_unavailable" | "considering_switch" | "other";
@@ -199,19 +206,39 @@ export function BookingForm({
       ...(crossInstructorReason ? { crossInstructorReason } : {}),
     };
 
+    // Every wall-clock-to-instant conversion here must go through the
+    // selected LOCATION's own timezone, never the browser's/server's local
+    // offset (this phase's plan doc, Global Constraints) — a staff member's
+    // device timezone can differ from the booking location's in a
+    // multi-location studio. selectedLocationId is always one of
+    // `locations`' own ids by construction, so this lookup can't actually
+    // miss; the fallback below only guards the impossible case rather than
+    // silently falling back to a wrong timezone.
+    const locationTimeZone = locations.find((location) => location.id === selectedLocationId)?.timezone ?? "UTC";
+
     try {
       let response: Response;
       if (mode === "one-off") {
+        const [year, month, day] = date.split("-").map(Number);
+        const [startHour, startMinute] = startTime.split(":").map(Number);
+        const [endHour, endMinute] = endTime.split(":").map(Number);
         response = await fetch(`/api/v1/studios/${studioId}/appointments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...shared,
-            startAt: new Date(`${date}T${startTime}:00`),
-            endAt: new Date(`${date}T${endTime}:00`),
+            startAt: localDateTimeToUtc(year, month, day, startHour, startMinute, locationTimeZone),
+            endAt: localDateTimeToUtc(year, month, day, endHour, endMinute, locationTimeZone),
           }),
         });
       } else {
+        const [startYear, startMonth, startDay] = seriesStartDate.split("-").map(Number);
+        const seriesStartAt = localDateTimeToUtc(startYear, startMonth, startDay, 0, 0, locationTimeZone);
+        let seriesEndAt: Date | undefined;
+        if (seriesEndDate) {
+          const [endYear, endMonth, endDay] = seriesEndDate.split("-").map(Number);
+          seriesEndAt = localDateTimeToUtc(endYear, endMonth, endDay, 0, 0, locationTimeZone);
+        }
         response = await fetch(`/api/v1/studios/${studioId}/appointments/series`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -220,8 +247,8 @@ export function BookingForm({
             dayOfWeek,
             startTime,
             endTime,
-            seriesStartDate: new Date(`${seriesStartDate}T00:00:00`),
-            ...(seriesEndDate ? { seriesEndDate: new Date(`${seriesEndDate}T00:00:00`) } : {}),
+            seriesStartDate: seriesStartAt,
+            ...(seriesEndAt ? { seriesEndDate: seriesEndAt } : {}),
           }),
         });
       }

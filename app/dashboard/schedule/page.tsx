@@ -279,7 +279,11 @@ export default async function SchedulePage(props: PageProps<"/dashboard/schedule
       instructorUserId: instructor.instructorUserId,
       name: instructor.name,
     }));
-    const bookingLocations = allLocations.map((location) => ({ id: location.id, name: location.name }));
+    const bookingLocations = allLocations.map((location) => ({
+      id: location.id,
+      name: location.name,
+      timezone: location.timezone,
+    }));
 
     bookingSection = (
       <Card>
