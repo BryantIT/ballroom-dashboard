@@ -49,6 +49,15 @@ export function DashboardNav({
         >
           Students
         </Link>
+        {/* appointments.read_all is likewise granted to all three
+            built-in roles (Task 14's brief) — same no-gate rationale as
+            the Students link above. */}
+        <Link
+          href="/dashboard/schedule"
+          className="text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          Schedule
+        </Link>
         {canManageBranding ? (
           <Link
             href="/dashboard/settings/branding"
