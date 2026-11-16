@@ -182,6 +182,54 @@ describe("appointment status transitions", () => {
     expect(updated.status).toBe("completed");
   });
 
+  test("checked_in -> canceled is legal", async () => {
+    const { db, owner, instructor1, studioId, locationA, roomA } = await createFixture("checked-in-canceled");
+    const student1 = await insertStudent(db, studioId, owner.id, "Student One");
+
+    const appointment = await createAppointment(
+      owner.id,
+      studioId,
+      {
+        instructorUserId: instructor1.id,
+        locationId: locationA.id,
+        roomId: roomA.id,
+        startAt: new Date("2024-03-04T15:00:00Z"),
+        endAt: new Date("2024-03-04T16:00:00Z"),
+        attendeeStudentIds: [student1.id],
+      },
+      db
+    );
+
+    await transitionAppointmentStatus(owner.id, studioId, appointment.id, "checked_in", db);
+    const updated = await transitionAppointmentStatus(owner.id, studioId, appointment.id, "canceled", db);
+    expect(updated.status).toBe("canceled");
+  });
+
+  test("checked_in -> late_canceled is legal", async () => {
+    const { db, owner, instructor1, studioId, locationA, roomA } = await createFixture(
+      "checked-in-late-canceled"
+    );
+    const student1 = await insertStudent(db, studioId, owner.id, "Student One");
+
+    const appointment = await createAppointment(
+      owner.id,
+      studioId,
+      {
+        instructorUserId: instructor1.id,
+        locationId: locationA.id,
+        roomId: roomA.id,
+        startAt: new Date("2024-03-04T15:00:00Z"),
+        endAt: new Date("2024-03-04T16:00:00Z"),
+        attendeeStudentIds: [student1.id],
+      },
+      db
+    );
+
+    await transitionAppointmentStatus(owner.id, studioId, appointment.id, "checked_in", db);
+    const updated = await transitionAppointmentStatus(owner.id, studioId, appointment.id, "late_canceled", db);
+    expect(updated.status).toBe("late_canceled");
+  });
+
   test("completed -> scheduled is illegal", async () => {
     const { db, owner, instructor1, studioId, locationA, roomA } = await createFixture("terminal-completed");
     const student1 = await insertStudent(db, studioId, owner.id, "Student One");

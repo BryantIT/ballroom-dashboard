@@ -32,21 +32,23 @@ export class IllegalStatusTransitionError extends Error {
 // Legal transition map, per BR-04 (references/ballroom_dash_spec_v0_3.md):
 // "scheduled -> checked_in -> completed (check-in optional); alternative
 // terminal outcomes canceled, late_canceled, no_show." Read literally:
-//   - scheduled is the only status any of the five outcomes below can be
-//     reached FROM. canceled/late_canceled/no_show are alternatives to
-//     living out the scheduled -> checked_in -> completed pipeline, not
-//     recoveries from partway through it — once an instructor has checked
-//     the appointment in, the student demonstrably showed up, so "no_show"
-//     and "late_canceled"/"canceled" no longer describe reality.
-//   - checked_in's only legal next step is completed (check-in is a
-//     midpoint on the one pipeline, not a branch point of its own).
+//   - scheduled can reach any of the five outcomes below. canceled/
+//     late_canceled/no_show are alternatives to living out the
+//     scheduled -> checked_in -> completed pipeline.
+//   - checked_in can reach completed (the pipeline's own next step), or
+//     canceled/late_canceled — staff need a way to correct a checked-in
+//     appointment that didn't actually happen (e.g. the lesson was called
+//     off right after check-in). checked_in canNOT reach no_show: no-show
+//     means the student never showed up, which directly contradicts
+//     having already been checked in — definitionally impossible, not
+//     merely discouraged.
 //   - completed, canceled, late_canceled, and no_show are all terminal:
 //     nothing may be transitioned out of them (this is also what makes
 //     "completed -> scheduled" illegal, and more generally guarantees a
 //     terminal appointment's status never changes again).
 const LEGAL_TRANSITIONS: Readonly<Record<string, readonly AppointmentTransitionTarget[]>> = {
   scheduled: ["checked_in", "completed", "canceled", "late_canceled", "no_show"],
-  checked_in: ["completed"],
+  checked_in: ["completed", "canceled", "late_canceled"],
   completed: [],
   canceled: [],
   late_canceled: [],
