@@ -99,7 +99,12 @@ export function localDateTimeToUtc(
 }
 
 // The local calendar date (year/month/day) `date` falls on in `timeZone`.
-function getLocalDateInTimezone(
+// Exported for reuse by lib/scheduling/appointments.ts's weekly series
+// generation (Task 9), which needs the same "which local calendar date
+// does this instant fall on" primitive that expandRegularDayOff below
+// already relies on — see this phase's plan doc Global Constraints on
+// timezone handling.
+export function getLocalDateInTimezone(
   date: Date,
   timeZone: string
 ): { year: number; month: number; day: number } {

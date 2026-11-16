@@ -56,3 +56,59 @@ export const createBlockSchema = z.discriminatedUnion("kind", [
 ]);
 
 export type CreateBlockInput = z.infer<typeof createBlockSchema>;
+
+// --- Phase 3: appointment booking (Task 9) --------------------------
+
+// Required only when an attendee's current primary instructor differs
+// from the instructor the appointment is being booked with (see
+// lib/scheduling/appointments.ts's CrossInstructorReasonRequiredError).
+const crossInstructorReasonSchema = z
+  .object({
+    code: z.enum(["buddy_lesson", "instructor_unavailable", "considering_switch", "other"]),
+    note: z.string().min(1).max(1000).optional(),
+  })
+  .strict();
+
+export const createAppointmentSchema = z
+  .object({
+    instructorUserId: z.uuid(),
+    locationId: z.uuid(),
+    roomId: z.uuid(),
+    startAt: z.coerce.date(),
+    endAt: z.coerce.date(),
+    // At least one attendee — a single student for a private lesson, or
+    // two for a "buddy"/couple's lesson booked as one appointment with
+    // two appointment_attendees rows.
+    attendeeStudentIds: z.array(z.uuid()).min(1),
+    crossInstructorReason: crossInstructorReasonSchema.optional(),
+  })
+  .strict()
+  .refine((data) => data.startAt < data.endAt, {
+    message: "startAt must be before endAt",
+    path: ["endAt"],
+  });
+
+export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
+
+export const createAppointmentSeriesSchema = z
+  .object({
+    instructorUserId: z.uuid(),
+    locationId: z.uuid(),
+    roomId: z.uuid(),
+    attendeeStudentIds: z.array(z.uuid()).min(1),
+    crossInstructorReason: crossInstructorReasonSchema.optional(),
+    dayOfWeek: z.number().int().min(0).max(6),
+    startTime: hhmm,
+    endTime: hhmm,
+    seriesStartDate: z.coerce.date(),
+    // Open-ended when omitted — bounded by createAppointmentSeries's own
+    // 12-week default window regardless (lib/scheduling/appointments.ts).
+    seriesEndDate: z.coerce.date().optional(),
+  })
+  .strict()
+  .refine((data) => data.startTime < data.endTime, {
+    message: "startTime must be before endTime",
+    path: ["endTime"],
+  });
+
+export type CreateAppointmentSeriesInput = z.infer<typeof createAppointmentSeriesSchema>;
