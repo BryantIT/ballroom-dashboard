@@ -10,7 +10,11 @@ export type TenantContext = {
 };
 
 type Db = NodePgDatabase<typeof schema>;
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+// Exported so service-layer modules (e.g. lib/scheduling/conflicts.ts) can
+// type a parameter as "an already-open transaction", for functions that are
+// always called together inside one withTenantContext transaction opened by
+// their caller, rather than opening their own.
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
  * Runs `callback` inside a transaction with `app.user_id` and (if present)
