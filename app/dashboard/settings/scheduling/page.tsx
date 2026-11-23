@@ -2,12 +2,13 @@
 import { and, asc, eq } from "drizzle-orm";
 import { verifySession } from "@/lib/dal";
 import { withTenantContext } from "@/lib/db/with-tenant-context";
-import { instructorLocations, locations, memberships } from "@/lib/db/schema";
+import { instructorLocations, locations, memberships, rooms } from "@/lib/db/schema";
 import { hasPermission } from "@/lib/auth/authorization";
 import { getInstructorLoad } from "@/lib/scheduling/instructor-load";
 import { resolveInstructorTimezone, MissingLocationTimezoneError } from "@/lib/scheduling/blocks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InstructorLocationSettings } from "@/components/instructor-location-settings";
+import { RoomSettings } from "@/components/room-settings";
 import { AvailabilityBlockForm } from "@/components/availability-block-form";
 
 export default async function SchedulingSettingsPage() {
@@ -103,8 +104,9 @@ export default async function SchedulingSettingsPage() {
   }));
 
   let locationSection = null;
+  let roomSection = null;
   if (canManageLocations) {
-    const [allLocations, assignments] = await Promise.all([
+    const [allLocations, assignments, allRooms] = await Promise.all([
       withTenantContext({ userId, tenantId: studioId }, (tx) =>
         tx
           .select({ id: locations.id, name: locations.name })
@@ -125,6 +127,14 @@ export default async function SchedulingSettingsPage() {
           .from(instructorLocations)
           .where(eq(instructorLocations.studioId, studioId))
       ),
+      // Same convention: every room in the studio in one query, not one
+      // round trip per location.
+      withTenantContext({ userId, tenantId: studioId }, (tx) =>
+        tx
+          .select({ id: rooms.id, name: rooms.name, locationId: rooms.locationId })
+          .from(rooms)
+          .where(eq(rooms.studioId, studioId))
+      ),
     ]);
 
     locationSection = (
@@ -139,6 +149,17 @@ export default async function SchedulingSettingsPage() {
             instructors={instructorOptions}
             assignments={assignments}
           />
+        </CardContent>
+      </Card>
+    );
+
+    roomSection = (
+      <Card>
+        <CardHeader>
+          <CardTitle>Rooms</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RoomSettings studioId={studioId} locations={allLocations} rooms={allRooms} />
         </CardContent>
       </Card>
     );
@@ -197,6 +218,7 @@ export default async function SchedulingSettingsPage() {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-6">
       {locationSection}
+      {roomSection}
       {blockSection}
     </div>
   );
