@@ -134,6 +134,83 @@
       "when": 1794517492005,
       "tag": "0018_backfill_branding_and_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794596349794,
+      "tag": "0019_burly_meteorite",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794597071279,
+      "tag": "0020_groovy_wolfsbane",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794597095656,
+      "tag": "0021_student_relationships_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794597732172,
+      "tag": "0022_pink_bloodaxe",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794597739825,
+      "tag": "0023_notes_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794598389488,
+      "tag": "0024_instructor_locations",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1794598396193,
+      "tag": "0025_instructor_locations_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1794600139639,
+      "tag": "0026_instructor_blocks",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794600154379,
+      "tag": "0027_instructor_blocks_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794601043918,
+      "tag": "0028_appointments",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794601046270,
+      "tag": "0029_appointments_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -41,7 +41,28 @@ GRANT SELECT, INSERT, UPDATE ON "app"."support_sessions" TO app_runtime;
 GRANT SELECT ON "app"."platform_admins" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."students" TO app_runtime;
 GRANT SELECT, INSERT, UPDATE ON "app"."student_assignments" TO app_runtime;
+GRANT SELECT, INSERT ON "app"."student_relationships" TO app_runtime;
+-- SELECT, INSERT only: notes are append-only in this phase — no route or
+-- service edits or deletes an existing note (same shape as
+-- student_relationships above).
+GRANT SELECT, INSERT ON "app"."notes" TO app_runtime;
+-- SELECT, INSERT only: assignments are added or left alone (ON CONFLICT DO
+-- NOTHING at the service layer), never updated or removed, in this phase.
+GRANT SELECT, INSERT ON "app"."instructor_locations" TO app_runtime;
 -- NOT RLS-protected (see lib/db/schema.ts) — the public subdomain
 -- lookup must read this before any tenant context exists. Scoping is
 -- enforced entirely in lib/branding/branding.ts.
 GRANT SELECT, INSERT, UPDATE ON "app"."studio_branding" TO app_runtime;
+-- SELECT, INSERT only: no route or service edits or deletes an existing
+-- block in this phase (same append-only shape as notes/student_relationships
+-- above) — canceling/editing availability is a later-phase concern.
+GRANT SELECT, INSERT ON "app"."instructor_blocks" TO app_runtime;
+-- SELECT, INSERT only: no planned code path updates a series row. Ending a
+-- series or changing its schedule is not in scope through Task 16.
+GRANT SELECT, INSERT ON "app"."appointment_series" TO app_runtime;
+-- SELECT, INSERT, UPDATE: appointments are created and later canceled or
+-- moved via status/time edits (Task 10); rows are never deleted.
+GRANT SELECT, INSERT, UPDATE ON "app"."appointments" TO app_runtime;
+-- SELECT, INSERT only: attendee rows are only ever added. Cancellation is a
+-- status transition on appointments, not a deletion of attendee rows.
+GRANT SELECT, INSERT ON "app"."appointment_attendees" TO app_runtime;

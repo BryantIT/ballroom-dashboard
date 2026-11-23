@@ -241,6 +241,50 @@ export const students = appSchema.table("students", {
     .notNull()
     .references(() => studios.id),
   displayName: text("display_name").notNull(),
+  // CRM profile fields (Phase 3). Nullable — no format constraint at the
+  // DB layer; Zod (createStudentSchema/updateStudentSchema) validates on
+  // write.
+  email: text("email"),
+  phone: text("phone"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Linked couples (display/booking convenience only — never merges notes,
+// progress, or billing between the two students). Undirected: a pair is
+// stored once, in whichever order the caller supplied, and
+// lib/students/relationships.ts checks/queries both column orderings
+// rather than normalizing storage order.
+export const studentRelationships = appSchema.table("student_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  studentAId: uuid("student_a_id")
+    .notNull()
+    .references(() => students.id),
+  studentBId: uuid("student_b_id")
+    .notNull()
+    .references(() => students.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Staff notes on a student. `restricted` notes are visible only to their
+// author and to staff holding notes.read_staff (Owner/Admin) — never to
+// other assigned instructors. See lib/students/notes.ts for the full
+// read/write authorization matrix.
+export const notes = appSchema.table("notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  studentId: uuid("student_id")
+    .notNull()
+    .references(() => students.id),
+  authorUserId: text("author_user_id")
+    .notNull()
+    .references(() => users.id),
+  body: text("body").notNull(),
+  restricted: boolean("restricted").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -259,6 +303,155 @@ export const studentAssignments = appSchema.table("student_assignments", {
   effectiveAt: timestamp("effective_at").notNull().defaultNow(),
   endedAt: timestamp("ended_at"),
 });
+
+// --- Phase 3: instructor-location assignments. Explicit, assignable data
+// (not inferred from appointments or anything else) — which locations
+// each instructor works at. Owner-only to write (locations.manage), same
+// rationale as locations/rooms themselves. Consumed by lib/scheduling's
+// calendar location filter (Task 14) via listLocationInstructors.
+export const instructorLocations = appSchema.table(
+  "instructor_locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    instructorUserId: text("instructor_user_id")
+      .notNull()
+      .references(() => users.id),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("instructor_locations_studio_instructor_location_unique").on(
+      t.studioId,
+      t.instructorUserId,
+      t.locationId
+    ),
+  ]
+);
+
+// --- Phase 3: instructor availability blocks — regular weekly days off,
+// one-off personal time off, and studio-wide holidays. `kind`
+// discriminates which other columns are populated (enforced by Zod's
+// createBlockSchema discriminated union on write, not a DB CHECK — same
+// posture as every other "kind"-like text column in this file, e.g.
+// studios.status/memberships.status, which also rely on app-level
+// validation rather than a Postgres CHECK constraint):
+//   - "regular_day_off": instructorUserId + dayOfWeek/startTime/endTime
+//     set, startAt/endAt null. A weekly recurrence resolved into concrete
+//     occurrences by lib/scheduling/blocks.ts's listBlocksInRange, in the
+//     relevant location's timezone (never UTC/server-local — see this
+//     phase's plan doc Global Constraints).
+//   - "personal_time_off": instructorUserId + startAt/endAt set
+//     (absolute UTC instants, already resolved by the caller), dayOfWeek/
+//     startTime/endTime null.
+//   - "studio_holiday": instructorUserId always null (studio-wide), only
+//     startAt/endAt set.
+// `label` is free text whose visibility is viewer-gated at read time by
+// getBlockLabel (a personal_time_off/day_off's label is visible only to
+// its own instructor, or anyone with appointments.manage_all) — this
+// table has no RLS-level label redaction, same shape as notes.restricted.
+export const instructorBlocks = appSchema.table("instructor_blocks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  instructorUserId: text("instructor_user_id").references(() => users.id),
+  kind: text("kind").notNull(),
+  dayOfWeek: integer("day_of_week"),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  startAt: timestamp("start_at"),
+  endAt: timestamp("end_at"),
+  label: text("label"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Phase 3: recurring appointment series. A weekly recurrence (dayOfWeek +
+// startTime/endTime in the location's timezone) that generates concrete
+// appointments rows. Schema only in Task 7; the generation/service logic
+// lands in later tasks. seriesEndDate null means open-ended.
+export const appointmentSeries = appSchema.table("appointment_series", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  instructorUserId: text("instructor_user_id")
+    .notNull()
+    .references(() => users.id),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  roomId: uuid("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  dayOfWeek: integer("day_of_week").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  seriesStartDate: timestamp("series_start_date").notNull(),
+  seriesEndDate: timestamp("series_end_date"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Phase 3: appointments. seriesId is null for one-off appointments and
+// points at the appointmentSeries row for generated occurrences.
+// status defaults to "scheduled"; like instructorBlocks.kind, its allowed
+// values are enforced by app-level validation, not a Postgres CHECK.
+// crossInstructorReasonCode/Note are populated only when an appointment is
+// booked with an instructor other than the one who would normally teach it.
+export const appointments = appSchema.table("appointments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  studioId: uuid("studio_id")
+    .notNull()
+    .references(() => studios.id),
+  seriesId: uuid("series_id").references(() => appointmentSeries.id),
+  instructorUserId: text("instructor_user_id")
+    .notNull()
+    .references(() => users.id),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id),
+  roomId: uuid("room_id")
+    .notNull()
+    .references(() => rooms.id),
+  startAt: timestamp("start_at").notNull(),
+  endAt: timestamp("end_at").notNull(),
+  status: text("status").notNull().default("scheduled"),
+  crossInstructorReasonCode: text("cross_instructor_reason_code"),
+  crossInstructorReasonNote: text("cross_instructor_reason_note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// --- Phase 3: appointment attendees (students booked into an appointment).
+// studioId is denormalized from appointments.studioId (not derived via a
+// join) so the RLS policy below doesn't need one — same rationale as
+// rooms.studioId and rolePermissions.studioId above. Nothing enforces that
+// it matches the owning appointment's studio yet; the service layer that
+// inserts attendees (later Phase 3 task) must derive it from the appointment.
+export const appointmentAttendees = appSchema.table(
+  "appointment_attendees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    studioId: uuid("studio_id")
+      .notNull()
+      .references(() => studios.id),
+    appointmentId: uuid("appointment_id")
+      .notNull()
+      .references(() => appointments.id),
+    studentId: uuid("student_id")
+      .notNull()
+      .references(() => students.id),
+  },
+  (t) => [
+    uniqueIndex("appointment_attendees_appointment_student_unique").on(
+      t.appointmentId,
+      t.studentId
+    ),
+  ]
+);
 
 // --- Phase 2: studio_branding — NOT tenant-owned, no RLS. Same exception
 // as `invitations` above, for a different reason: the public subdomain
